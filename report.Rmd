@@ -1,0 +1,2994 @@
+---
+title: "Supplementary data for the manuscript on the Pyrenodesmia Syngameon. Part I"
+author: "Fernando Fernández Mendoza et al."
+output:
+  html_document: 
+    keep_md: yes
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+  pdf_document: 
+    keep_tex: yes
+    toc: true
+    number_sections: true
+    toc_depth: 3
+---
+
+# Introduction
+
+This document contains the suppelementary material necessary for the interpretation of the main manuscript regarding the taxonomically complex genus Pyrenodesmia. The supplement is organized in three parts.
+
+The first part deals with population genetics and phylogenetic methods and aims at discussing the extent to which different methodological approaches can be used to identify species in this genus.
+
+The second part uses sequences of the Mating type idiomorphs found in dykariotic samples to identify the extent to which there is a missmatch between postzigotic and prezygotic reproductive isolation.
+
+Finally the third part surveys genomic signatures of hybridization encountered in the genome of Pyrenodesmia erodens.
+
+The R code used for data processing, as untidy as it may be is shown together with the results. Some parts of the code have been commented out and substituted by importing a final environment to avoid repeating costly computations while compiling the supplement.
+
+# Part I. Population and phylogenetic structure
+
+## I.I Estimation of evolutionary populations in BAPS
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+load("/Users/Fernando/Desktop/01_Sanger_paper/final_dataset_v15.Rdata")
+#load("/Users/Fernando/Desktop/01_Sanger_paper/14_bGMYC_All_loci/03_Processed/workspace_step3.Rdata")
+
+library(ggplot2)
+library(reshape2)
+library(fpc)
+library(vcd)
+library(ape)
+library(phangorn)
+library(bipartite)
+library(knitr)
+library(dplyr)
+
+colorinos.bipolar<-c("#CAB2D6",
+                     "#A6CEE3",
+                     "#999999",
+                     "#6A3D9A",
+                     "#339933",
+                     "#E31A1C",
+                     "#FF7F00",
+                     "#1F78B4",
+                     "#B2DF8A",
+                     "#FB9A99",
+                     "#720D0E")
+#
+#
+# Take out samples 810,811 Americanas and correct 281 and 357
+#
+#baps.adm["281",c(3,4,5,6)]<-baps.adm["1111",c(3,4,5,6)]
+#baps.adm["357",c(3,4,5,6)]<-baps.adm["355",c(3,4,5,6)]
+#baps.adm["194",c(3,4,5,6)]<-baps.adm["192",c(3,4,5,6)]
+#baps.adm["261",c(3,4,5,6)]<-baps.adm["259",c(3,4,5,6)]
+#baps.adm["262",c(3,4,5,6)]<-baps.adm["259",c(3,4,5,6)]
+#baps.adm["318",c(3,4,5,6)]<-baps.adm["317",c(3,4,5,6)]
+#baps.adm["318",2]<-baps.adm["17",2]
+#baps.adm["283",2]<-baps.adm["17",2]
+#baps.adm["178",2]<-baps.adm["17",2]
+#baps.adm["1181",2]<-baps.adm["17",2]
+#baps.adm["5",c(3,4,5,6)]<-baps.adm["3",c(3,4,5,6)]
+#baps.adm["5.1",c(3,4,5,6)]<-baps.adm["3",c(3,4,5,6)]
+#baps.adm["439",c(3,4,5,6)]<-baps.adm["438",c(3,4,5,6)]
+#baps.adm["753",c(3,4,5,6)]<-baps.adm["751",c(3,4,5,6)]   
+#baps.adm["753.1",c(3,4,5,6)]<-baps.adm["751",c(3,4,5,6)] 
+#baps.adm["792",c(3,4,5,6)]<-baps.adm["794",c(3,4,5,6)]   
+#baps.adm["792.1",c(3,4,5,6)]<-baps.adm["794",c(3,4,5,6)] 
+#baps.adm["364",c(3,4,5,6)]<-baps.adm["854",c(3,4,5,6)]
+#save.image("/Users/Fernando/Desktop/01_Sanger_paper/final_dataset_v12.Rdata")
+#
+# Did not trim
+#
+#baps.adm<-baps.adm[rownames(baps.adm)!="810",]
+#baps.adm<-baps.adm[rownames(baps.adm)!="811",]
+#
+# Last edit, ID correction
+#
+#a<-read.table("/Users/Fernando/Desktop/01_paper_sanger_drive/reidentify.txt",header=FALSE,sep="\t")
+#rownames(a)<-a[,1]
+#baps.adm$Species<-a[as.character(sapply(strsplit(rownames(baps.adm),"\\."),`[`,1)),2]
+#baps.adm["1049",3:6]<-c(439,6.465392,45.991996,1755)
+#save.image("/Users/Fernando/Desktop/01_Sanger_paper/final_dataset_v13.Rdata")
+
+#
+
+sample_names<-sapply(strsplit(rownames(baps.adm),"\\."),`[`,1)
+condensed_baps_adm<-baps.adm[!duplicated(sample_names),]
+foo<-aggregate(x=baps.adm[,13:22],by=list(sample_names),FUN=mean)
+rownames(foo)<-foo$Group.1
+condensed_baps_adm[,13:22]<-foo[rownames(condensed_baps_adm),-1]
+condensed_baps_adm<-cbind(sample=rownames(condensed_baps_adm),condensed_baps_adm)
+condensed_baps_adm$name<-apply(condensed_baps_adm[,14:23],1,FUN=which.max)
+
+orden.foo<-rownames(condensed_baps_adm)[order(condensed_baps_adm$name,-condensed_baps_adm$X1,-condensed_baps_adm$X2,-condensed_baps_adm$X3,-condensed_baps_adm$X4,-condensed_baps_adm$X5,-condensed_baps_adm$X6,-condensed_baps_adm$X7,-condensed_baps_adm$X8,-condensed_baps_adm$X9,-condensed_baps_adm$X10,condensed_baps_adm$sample)]
+
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo)
+foo<-melt(foo[,c(1,15:24)])
+```
+
+
+```{r}
+#### Rarefaction curves
+
+draw_haplo<-function(x)
+  {
+require(future.apply)
+plan(multicore,workers=100)
+foo<-x
+foo<-foo[row.names(foo)!="Xanpa",]
+foo.list<-seq(from=5,to=dim(foo)[1],by=50)
+salida<-future_lapply(foo.list,FUN=function(z){
+  sapply(c(1:100),FUN=function(y){
+    mean(
+      dist(
+        foo[sample(1:dim(foo)[1],size=z),]
+  )
+)
+}
+)
+})
+return(melt(salida))
+}
+
+#fer<-draw_haplo(seq.dataset[[1]])
+```
+### Supplementary Figure 0. Species distribution in the dataset
+
+```{r plot_sps1}
+species_foo<-condensed_baps_adm[orden.foo,]
+species_foo<-cbind(orden=factor(c(1:dim(species_foo)[1])),species_foo)
+species_foo<-melt(species_foo[,c(1,3)])
+
+
+p<-ggplot(species_foo) +
+  geom_bar(aes(x=orden, y=1,fill=Species),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar) +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 0.25, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 0.5, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 0.75, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar()
+print(p+theme(legend.position = "none"))
+```
+
+```{r plot_sps2}
+legend <- cowplot::get_legend(p)
+grid.newpage()
+grid.draw(legend)
+```
+```{r plot_sps3, fig.width=10, fig.height=14}
+print(p+theme(legend.position = "none")+facet_wrap(vars(Species)))
+```
+
+### Supplementary Figure 1. Differential contribution to admixture of each gene-pool.
+
+```{r plot_baps}
+
+p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=value,fill=variable),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar) +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 0.25, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 0.5, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 0.75, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p)
+```
+
+### Supplementary Figure 2. Contribution of each genepool to the minoritary admixed fractions.
+
+```{r}
+library(dplyr)
+min_fract<-melt(condensed_baps_adm[,c(1,14:23)])
+foo<-sum(min_fract$value)
+min_fract %>% group_by(variable) %>% arrange(value,.by_group = TRUE) %>% summarize(Sum = sum(value, na.rm=TRUE)/foo) ->total_contribution
+
+min_fract %>% group_by(sample) %>% slice_max(.,order_by = value) -> max_fract
+min_fract<-min_fract[min_fract$value!=0&min_fract$value!=1,]
+#min_fract %>% group_by(sample) %>% arrange(value,.by_group = TRUE)
+
+min_fract %>% group_by(sample) %>% arrange(value,.by_group = TRUE) %>% dplyr::slice(1:n()-1) %>% ggplot(.,aes(x=variable,y=value,fill=variable))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2)) 
+```
+
+### Supplementary Table 1. Additive Contribution of each genepool to the admixed signal.
+
+```{r}
+foo<-sum(min_fract$value)
+min_fract %>% group_by(variable) %>% arrange(value,.by_group = TRUE) %>% summarize(Sum = sum(value, na.rm=TRUE)/foo) ->foo
+table_admixture_anovas<-cbind(total=total_contribution,admix=foo$Sum)
+kable(table_admixture_anovas)
+```
+
+### Supplementary Figure 3 (A-E). Contribution of each genepool to the minoritary admixed fractions. Added contribution of each component to the minor component vs fraction of the total contribution to ancestry of the whole dataset.
+
+```{r}
+plot(foo$Sum~total_contribution$Sum)
+linear_model<-glm(foo$Sum~total_contribution$Sum)
+plot(linear_model)
+```
+
+### Supplementary table 2. Contribution of each genepool to the minoritary admixed fractions.
+
+```{r}
+kable(anova(linear_model))
+```
+
+### Supplementary Figure 4. Contribution of each genepool to the minoritary admixed fractions.
+
+```{r}
+min_fract<-melt(condensed_baps_adm[,c(1,14:23)])
+min_fract<-min_fract[min_fract$value>0.05&min_fract$value<0.95,]
+min_fract %>% group_by(sample) %>% arrange(value,.by_group = TRUE)
+
+min_fract %>% group_by(sample) %>% arrange(value,.by_group = TRUE) %>% dplyr::slice(1:n()-1) %>% ggplot(.,aes(x=variable,y=value,fill=variable))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2)) 
+```
+
+### Supplementary table 3. Contribution of each genepool to the minoritary admixed fractions.
+
+```{r}
+min_fract %>% group_by(variable) %>% summarize(Mean = mean(value, na.rm=TRUE), Sum = sum(value, na.rm=TRUE)) %>% cbind(.,Max=as.numeric(table(max_fract$variable))) -> foo
+
+foo %>% glm(Mean~Max,data=.) %>% anova %>% kable ()
+
+table_admixture_anovas<-cbind(table_admixture_anovas,Mean05=foo$Mean,Sum05=foo$Sum,Max05=foo$Max)
+```
+
+### Supplementary table 4. Analisis of variance.
+
+```{r}
+foo %>% lm(Sum~Max,data=.) %>% anova %>% kable()
+```
+
+### Supplementary Figure 5. Contribution of each genepool to the minoritary admixed fractions considering at least 0.1 as a significant fraction.
+
+```{r}
+min_fract<-melt(condensed_baps_adm[,c(1,14:23)])
+min_fract<-min_fract[min_fract$value>0.10&min_fract$value<0.90,]
+min_fract %>% group_by(sample) %>% arrange(value,.by_group = TRUE)
+
+min_fract %>% group_by(sample) %>% arrange(value,.by_group = TRUE) %>% dplyr::slice(1:n()-1) %>% ggplot(.,aes(x=variable,y=value,fill=variable))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2)) 
+```
+
+### Supplementary table 5. Analisis of variance using average assignments
+
+```{r}
+min_fract %>% group_by(variable) %>% summarize(Mean = mean(value, na.rm=TRUE), Sum = sum(value, na.rm=TRUE)) %>% cbind(.,Max=as.numeric(table(max_fract$variable))) -> foo
+
+foo %>% lm(Mean~Max,data=.) %>% anova
+```
+
+### Supplementary table 6. Analisis of variance using summed assignments.
+
+```{r}
+foo %>%  lm(Sum~Max,data=.) %>% anova
+```
+
+### Supplementary table 7. Contribution of each gene-pool to the minor admixed component across the dataset.
+
+```{r}
+table_admixture_anovas<-cbind(table_admixture_anovas,Mean1=foo$Mean,Sum1=foo$Sum,Max1=foo$Max)
+kable(table_admixture_anovas)
+```
+
+### Supplementary Figure 6.
+
+```{r}
+plot(table_admixture_anovas)
+```
+
+### Supplementary table 8.
+
+```{r}
+table_admixture_anovas %>% glm(Max05~total.Sum,data=.) %>% anova %>% kable ()
+```
+
+### Supplementary table 9.
+
+```{r}
+table_admixture_anovas %>% glm(Max1~total.Sum,data=.) %>% anova %>% kable ()
+```
+
+### Supplementary table 10.
+
+```{r}
+table_admixture_anovas %>% glm(Mean05~total.Sum,data=.) %>% anova %>% kable ()
+```
+
+```{r}
+table_admixture_anovas %>% glm(Mean1~total.Sum,data=.) %>% anova %>% kable ()
+```
+
+```{r}
+table_admixture_anovas %>% glm(Sum05~total.Sum,data=.) %>% anova %>% kable ()
+```
+
+```{r}
+table_admixture_anovas %>% glm(Sum1~total.Sum,data=.) %>% anova %>% kable ()
+```
+
+```{r}
+kable(anova(linear_model))
+```
+
+### Geographic distribution of BAPS gene-pools
+
+#### Supplementary figure
+
+```{r}
+library("rnaturalearth")
+library("rnaturalearthdata")
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+foo<-condensed_baps_adm[condensed_baps_adm$X1>0.5,]
+ggplot(data = world) + 
+  geom_sf() + 
+  theme_bw() + 
+  coord_sf(xlim = c(-15, 70),
+           ylim = c(30, 65),
+           expand = FALSE) +
+  stat_density_2d(geom = "polygon",
+                  data=foo[!duplicated(foo$Locality),],
+                  mapping = aes(x=lon,y=lat,alpha = ..level..),
+                  fill = colorinos.bipolar[1]) +
+  expand_limits(x= c(-30, 70),
+                y = c(30, 65)) +
+  geom_point(data=foo,
+             aes(x=lon,y=lat))
+```
+
+```{r}
+foo<-condensed_baps_adm[condensed_baps_adm$X2>0.5,]
+ggplot(data = world) + 
+  geom_sf() + 
+  theme_bw() + 
+  coord_sf(xlim = c(-15, 70),
+           ylim = c(30, 65),
+           expand = FALSE) +
+  stat_density_2d(geom = "polygon",
+                  data=foo[!duplicated(foo$Locality),],
+                  mapping = aes(x=lon,y=lat,alpha = ..level..),
+                  fill = colorinos.bipolar[2]) +
+  expand_limits(x= c(-30, 70),
+                y = c(30, 65)) +
+  geom_point(data=foo,
+             aes(x=lon,y=lat))
+```
+
+```{r}
+foo<-condensed_baps_adm[condensed_baps_adm$X3>0.5,]
+ggplot(data = world) + 
+  geom_sf() + 
+  theme_bw() + 
+  coord_sf(xlim = c(-15, 70),
+           ylim = c(30, 65),
+           expand = FALSE) +
+  stat_density_2d(geom = "polygon",
+                  data=foo[!duplicated(foo$Locality),],
+                  mapping = aes(x=lon,y=lat,alpha = ..level..),
+                  fill = colorinos.bipolar[3]) +
+  expand_limits(x= c(-30, 70),
+                y = c(30, 65)) +
+  geom_point(data=foo,
+             aes(x=lon,y=lat))
+```
+
+```{r}
+foo<-condensed_baps_adm[condensed_baps_adm$X4>0.5,]
+ggplot(data = world) + 
+  geom_sf() + 
+  theme_bw() + 
+  coord_sf(xlim = c(-15, 70),
+           ylim = c(30, 65),
+           expand = FALSE) +
+  stat_density_2d(geom = "polygon",
+                  data=foo[!duplicated(foo$Locality),],
+                  mapping = aes(x=lon,y=lat,alpha = ..level..),
+                  fill = colorinos.bipolar[4]) +
+  expand_limits(x= c(-30, 70),
+                y = c(30, 65)) +
+  geom_point(data=foo,
+             aes(x=lon,y=lat))
+```
+
+```{r}
+foo<-condensed_baps_adm[condensed_baps_adm$X5>0.5,]
+ggplot(data = world) + 
+  geom_sf() + 
+  theme_bw() + 
+  coord_sf(xlim = c(-15, 70),
+           ylim = c(30, 65),
+           expand = FALSE) +
+  stat_density_2d(geom = "polygon",
+                  data=foo[!duplicated(foo$Locality),],
+                  mapping = aes(x=lon,y=lat,alpha = ..level..),
+                  fill = colorinos.bipolar[5]) +
+  expand_limits(x= c(-30, 70),
+                y = c(30, 65)) +
+  geom_point(data=foo,
+             aes(x=lon,y=lat))
+```
+
+```{r}
+foo<-condensed_baps_adm[condensed_baps_adm$X6>0.5,]
+ggplot(data = world) + 
+  geom_sf() + 
+  theme_bw() + 
+  coord_sf(xlim = c(-15, 70),
+           ylim = c(30, 65),
+           expand = FALSE) +
+  stat_density_2d(geom = "polygon",
+                  data=foo[!duplicated(foo$Locality),],
+                  mapping = aes(x=lon,y=lat,alpha = ..level..),
+                  fill = colorinos.bipolar[6]) +
+  expand_limits(x= c(-30, 70),
+                y = c(30, 65)) +
+  geom_point(data=foo,
+             aes(x=lon,y=lat))
+```
+
+```{r}
+foo<-condensed_baps_adm[condensed_baps_adm$X7>0.5,]
+ggplot(data = world) + 
+  geom_sf() + 
+  theme_bw() + 
+  coord_sf(xlim = c(-15, 70),
+           ylim = c(30, 65),
+           expand = FALSE) +
+  stat_density_2d(geom = "polygon",
+                  data=foo[!duplicated(foo$Locality),],
+                  mapping = aes(x=lon,y=lat,alpha = ..level..),
+                  fill = colorinos.bipolar[7]) +
+  expand_limits(x= c(-30, 70),
+                y = c(30, 65)) +
+  geom_point(data=foo,
+             aes(x=lon,y=lat))
+```
+
+```{r}
+foo<-condensed_baps_adm[condensed_baps_adm$X8>0.5,]
+ggplot(data = world) + 
+  geom_sf() + 
+  theme_bw() + 
+  coord_sf(xlim = c(-15, 70),
+           ylim = c(30, 65),
+           expand = FALSE) +
+  stat_density_2d(geom = "polygon",
+                  data=foo[!duplicated(foo$Locality),],
+                  mapping = aes(x=lon,y=lat,alpha = ..level..),
+                  fill = colorinos.bipolar[8]) +
+  expand_limits(x= c(-30, 70),
+                y = c(30, 65)) +
+  geom_point(data=foo,
+             aes(x=lon,y=lat))
+```
+
+```{r}
+foo<-condensed_baps_adm[condensed_baps_adm$X9>0.5,]
+ggplot(data = world) + 
+  geom_sf() + 
+  theme_bw() + 
+  coord_sf(xlim = c(-15, 70),
+           ylim = c(30, 65),
+           expand = FALSE) +
+  stat_density_2d(geom = "polygon",
+                  data=foo[!duplicated(foo$Locality),],
+                  mapping = aes(x=lon,y=lat,alpha = ..level..),
+                  fill = colorinos.bipolar[9]) +
+  expand_limits(x= c(-30, 70),
+                y = c(30, 65)) +
+  geom_point(data=foo,
+             aes(x=lon,y=lat))
+```
+
+```{r}
+foo<-condensed_baps_adm[condensed_baps_adm$X10>0.5,]
+ggplot(data = world) + 
+  geom_sf() + 
+  theme_bw() + 
+  coord_sf(xlim = c(-15, 70),
+           ylim = c(30, 65),
+           expand = FALSE) +
+  stat_density_2d(geom = "polygon",
+                  data=foo[!duplicated(foo$Locality),],
+                  mapping = aes(x=lon,y=lat,alpha = ..level..),
+                  fill = colorinos.bipolar[10]) +
+  expand_limits(x= c(-30, 70),
+                y = c(30, 65)) +
+  geom_point(data=foo,
+             aes(x=lon,y=lat))
+```
+
+### Association between gene-pools and morphospecies
+
+```{r assoc_baps}
+# Heatmap 1 Species vs BAPS
+
+foo_tabla<-melt(table(condensed_baps_adm$Species,condensed_baps_adm$name))
+foo_tabla$value[foo_tabla$value==0]<-NA
+
+
+  ggplot(foo_tabla,aes(x=Var2,y=Var1,fill=value)) + geom_tile(color = "black") + geom_text(aes(label = value), color = "black", size = 2) +
+    scale_fill_gradient2(low = "#FFFFFF",
+  mid = colorinos.bipolar[7],
+  high = colorinos.bipolar[6],
+  midpoint = 20,
+  space = "Lab",
+  na.value = "#FFFFFF",
+  guide = "colourbar",
+  aesthetics = "fill"
+) +
+  coord_fixed() + theme_bw() 
+```
+
+```{r, fig.width=14, fig.height=14}
+print(assoc(table(condensed_baps_adm$Species,condensed_baps_adm$name),shade=TRUE))
+```
+
+```{r}
+assocstats(table(condensed_baps_adm$Species,condensed_baps_adm$name))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm$Species,condensed_baps_adm$name))
+```
+
+### How much of the species splitting is explained by the assignment to gene-pools?
+
+```{r}
+library(mda)
+foo_fdas<-condensed_baps_adm[,c("Species","X1","X2","X3","X4","X5","X6","X7","X8","X9","X10")]
+disc_clusters<-mda::fda(Species~X1+X2+X3+X4+X5+X6+X7+X8+X9+X10, foo_fdas)
+print(disc_clusters)
+```
+
+```{r}
+kable(coef(disc_clusters,foo_fdas))
+```
+## I.II Phylogenetic signal in BAPS clusters and species IDs
+
+### Phylogenetic signal in BAPS clusters
+
+```{r}
+library(picante)
+library(ape)
+library(adephylo)
+library(ade4)
+library(phylobase)
+library(geiger)
+library(phytools)
+library(future.apply)
+
+foo_adm<-baps.adm
+rownames(foo_adm)<-paste("X",gsub("\\.1","B",rownames(foo_adm)),sep="")
+foo_adm<-rbind(foo_adm,XXanpa=0)
+plan(multicore,workers=10)
+#phylosig_final<-future_lapply(
+#  c("X1","X2","X3","X4","X5","X6","X7","X8","X9","X10"),
+#  FUN=function(GRUPO)
+#  {
+#  phylo_signal<-lapply(tree.dataset,
+#       FUN=function(x){
+#  groups_mix<-as.numeric(foo_adm[x$tip.label,GRUPO])
+#  names(groups_mix)<-x$tip.label
+#  foo_out<-phytools::phylosig(
+#  root(
+#    compute.brlen(x),
+#    outgroup = "XXanpa",
+#    node=NULL,
+#    resolve.root = TRUE),
+#  groups_mix, method="lambda", test=TRUE, nsim=999)
+#  return(foo_out)
+#})
+#  return(phylo_signal)
+#})
+load("/Users/Fernando/Desktop/01_Sanger_paper/final_dataset_v15.Rdata")
+print(phylosig_final)
+#save.image("/Users/Fernando/Desktop/01_Sanger_paper/final_dataset_v14.Rdata")
+```
+
+### Migrate-n migration network between BAPS gene clusters
+
+```{r}
+library(igraph)
+connectors<-read.delim2("/Users/Fernando/Desktop/01_Sanger_paper/19_migrate-n/for_network.txt",header = FALSE)
+nodes<-read.delim2("/Users/Fernando/Desktop/01_Sanger_paper/19_migrate-n/for_network2.txt",header = FALSE)
+nodes<-data.frame(nodes=as.character(nodes[,1]),theta=as.numeric(nodes[,2]))
+connectors<-data.frame(from = as.character(connectors[,1]),to = as.character(connectors[,2]),weight = as.numeric(connectors[,3]))
+foo_col<-colorinos.bipolar[c(10,7,6,9,5,8,2,4,1,11)]
+names(foo_col)<-nodes$nodes
+rownames(nodes)<-nodes$nodes
+migrate_M<-graph_from_data_frame(connectors, directed = TRUE, vertices = nodes)
+```
+```{r}
+coords<-layout_(migrate_M,
+                in_circle())
+plot(migrate_M,
+     vertex.size = 500*vertex_attr(migrate_M,"theta"),
+     edge.arrow.size = 0.5,
+     edge.width = connectors$weight/20,
+     edge.color = foo_col[connectors$from],
+     vertex.color = foo_col[V(migrate_M)],
+     edge.curved=seq(-0.3, 0.3, length = ecount(migrate_M)),
+     layout = coords,
+     vertex.label.font=2,
+     vertex.label.color="gray40",
+     vertex.label.cex=.5
+     )
+```
+```{r}
+connectors$weight<-connectors$weight*nodes[connectors$to,"theta"]
+connectors_backup<-connectors
+connectors<-connectors[connectors$weight>=2,]
+
+#foo_col[connectors$to]
+migrate_2Ne<-graph_from_data_frame(connectors, directed = TRUE, vertices = nodes)
+
+#set_vertex_attr(migrate, "theta", index = V(migrate), value = 100*as.numeric(nodes[,2]))
+```
+```{r}
+coords<-layout_(migrate_2Ne,
+                in_circle())
+curves<-mat.or.vec(ecount(migrate_2Ne),1)
+
+paste(connectors[,1],connectors[,2],sep="")%in%paste(connectors[,2],connectors[,1],sep="")
+curves[gsub("M_","",connectors[,1])!=gsub("M_","",connectors[,2])]<--0.1
+curves[!(paste(connectors[,1],connectors[,2],sep="")%in%paste(connectors[,2],connectors[,1],sep=""))]<-0
+plot(migrate_2Ne,
+     vertex.size = 500*vertex_attr(migrate_2Ne,"theta"),
+     edge.arrow.size = 0.5,
+     edge.width = connectors$weight,
+     edge.color = foo_col[connectors$from],
+     vertex.color = foo_col[V(migrate_2Ne)],
+     edge.curved=curves,
+     layout = coords,
+     vertex.label.font=2,
+     vertex.label.color="gray40",
+     vertex.label.cex=.5
+     )
+```
+
+```{r}
+coords<-layout_(migrate_M,
+                in_circle())
+plot(migrate_M,
+     vertex.size = 500*vertex_attr(migrate_M,"theta"),
+     edge.arrow.size = 0.5,
+     edge.width = connectors$weight,
+     edge.color = foo_col[connectors$from],
+     vertex.color = foo_col[V(migrate_M)],
+     edge.curved=seq(-0.3, 0.3, length = ecount(migrate_M)),
+     layout = coords,
+     vertex.label.font=2,
+     vertex.label.color="gray40",
+     vertex.label.cex=.5
+     )
+```
+```{r}
+foo.table<-cbind(nodes,from=sapply(nodes[,1],FUN=function(x){sum(connectors_backup$weight[connectors_backup$from==x])}),to=sapply(nodes[,1],FUN=function(x){sum(connectors_backup$weight[connectors_backup$to==x])}))
+kable(cbind(foo.table[,-1],balance=foo.table$to-foo.table$from))
+
+#kable(
+#  rbind(
+#  c("M_2",
+#      sum(connectors_backup$weight[connectors_backup$from=="M_2"&connectors_backup$to!="M_3"]),
+#      sum(connectors_backup$weight[connectors_backup$to=="M_2"&connectors_backup$from!="M_3"])
+#      ),
+##      c("M_3",
+#      sum(connectors_backup$weight[connectors_backup$from=="M_3"&connectors_backup$to!="M_2"]),
+#      sum(connectors_backup$weight[connectors_backup$to=="M_3"&connectors_backup$from!="M_2"])
+#      )
+#  )
+#)
+```
+
+### Migrate-n migration network between BAPS gene clusters using mat genes
+
+#### HMG
+
+```{r}
+library(igraph)
+connectors<-read.delim2("/Users/Fernando/Desktop/01_Sanger_paper/19_migrate-n/for_network_hmg2",header = FALSE)
+nodes<-read.delim2("/Users/Fernando/Desktop/01_Sanger_paper/19_migrate-n/for_network_hmg",header = FALSE)
+nodes<-data.frame(nodes=as.character(nodes[,1]),theta=as.numeric(nodes[,2]))
+connectors<-data.frame(from = as.character(connectors[,1]),to = as.character(connectors[,2]),weight = as.numeric(connectors[,3]))
+foo_col<-colorinos.bipolar[c(10,7,6,9,5,8,2,4,1,11)]
+names(foo_col)<-nodes$nodes
+rownames(nodes)<-nodes$nodes
+migrate_M<-graph_from_data_frame(connectors, directed = TRUE, vertices = nodes)
+```
+
+#### Complete network edges proportional to M
+
+```{r}
+coords<-layout_(migrate_M,
+                in_circle())
+plot(migrate_M,
+     vertex.size = 100*vertex_attr(migrate_M,"theta"),
+     edge.arrow.size = 0.5,
+     edge.width = connectors$weight/10,
+     edge.color = foo_col[connectors$from],
+     vertex.color = foo_col[V(migrate_M)],
+     edge.curved=seq(-0.3, 0.3, length = ecount(migrate_M)),
+     layout = coords,
+     vertex.label.font=2,
+     vertex.label.color="gray40",
+     vertex.label.cex=.5
+     )
+```
+
+```{r}
+connectors$weight<-connectors$weight*nodes[connectors$to,"theta"]
+connectors_backup<-connectors
+connectors<-connectors[connectors$weight>=2,]
+
+#foo_col[connectors$to]
+migrate_2Ne<-graph_from_data_frame(connectors, directed = TRUE, vertices = nodes)
+
+#set_vertex_attr(migrate, "theta", index = V(migrate), value = 100*as.numeric(nodes[,2]))
+```
+
+#### Reduced netwrok edges are 2Neu only connections above 2 migrants per generation are shown.
+
+```{r}
+coords<-layout_(migrate_2Ne,
+                in_circle())
+curves<-mat.or.vec(ecount(migrate_2Ne),1)
+
+paste(connectors[,1],connectors[,2],sep="")%in%paste(connectors[,2],connectors[,1],sep="")
+curves[gsub("M_","",connectors[,1])!=gsub("M_","",connectors[,2])]<--0.1
+curves[!(paste(connectors[,1],connectors[,2],sep="")%in%paste(connectors[,2],connectors[,1],sep=""))]<-0
+plot(migrate_2Ne,
+     vertex.size = 100*vertex_attr(migrate_2Ne,"theta"),
+     edge.arrow.size = 0.5,
+     edge.width = connectors$weight/10,
+     edge.color = foo_col[connectors$from],
+     vertex.color = foo_col[V(migrate_2Ne)],
+     edge.curved=curves,
+     layout = coords,
+     vertex.label.font=2,
+     vertex.label.color="gray40",
+     vertex.label.cex=.5
+     )
+```
+
+```{r}
+coords<-layout_(migrate_M,
+                in_circle())
+plot(migrate_M,
+     vertex.size = 100*vertex_attr(migrate_M,"theta"),
+     edge.arrow.size = 0.5,
+     edge.width = connectors$weight/10,
+     edge.color = foo_col[connectors$from],
+     vertex.color = foo_col[V(migrate_M)],
+     edge.curved=seq(-0.3, 0.3, length = ecount(migrate_M)),
+     layout = coords,
+     vertex.label.font=2,
+     vertex.label.color="gray40",
+     vertex.label.cex=.5
+     )
+```
+```{r}
+foo.table<-cbind(nodes,from=sapply(nodes[,1],FUN=function(x){sum(connectors_backup$weight[connectors_backup$from==x])}),to=sapply(nodes[,1],FUN=function(x){sum(connectors_backup$weight[connectors_backup$to==x])}))
+kable(cbind(foo.table[,-1],balance=foo.table$to-foo.table$from))
+
+#kable(
+#  rbind(
+#  c("M_2",
+#      sum(connectors_backup$weight[connectors_backup$from=="M_2"&connectors_backup$to!="M_3"]),
+#      sum(connectors_backup$weight[connectors_backup$to=="M_2"&connectors_backup$from!="M_3"])
+#      ),
+##      c("M_3",
+#      sum(connectors_backup$weight[connectors_backup$from=="M_3"&connectors_backup$to!="M_2"]),
+#      sum(connectors_backup$weight[connectors_backup$to=="M_3"&connectors_backup$from!="M_2"])
+#      )
+#  )
+#)
+```
+
+#### Alpha
+
+```{r}
+library(igraph)
+connectors<-read.delim2("/Users/Fernando/Desktop/01_Sanger_paper/19_migrate-n/for_network_a2",header = FALSE)
+nodes<-read.delim2("/Users/Fernando/Desktop/01_Sanger_paper/19_migrate-n/for_network_a",header = FALSE)
+nodes<-data.frame(nodes=as.character(nodes[,1]),theta=as.numeric(nodes[,2]))
+connectors<-data.frame(from = as.character(connectors[,1]),to = as.character(connectors[,2]),weight = as.numeric(connectors[,3]))
+foo_col<-colorinos.bipolar[c(10,7,6,9,5,8,2,4,1,11)]
+names(foo_col)<-nodes$nodes
+rownames(nodes)<-nodes$nodes
+migrate_M<-graph_from_data_frame(connectors, directed = TRUE, vertices = nodes)
+```
+
+#### Complete network edges proportional to M
+
+```{r}
+coords<-layout_(migrate_M,
+                in_circle())
+plot(migrate_M,
+     vertex.size = 50*vertex_attr(migrate_M,"theta"),
+     edge.arrow.size = 0.5,
+     edge.width = connectors$weight/50,
+     edge.color = foo_col[connectors$from],
+     vertex.color = foo_col[V(migrate_M)],
+     edge.curved=seq(-0.3, 0.3, length = ecount(migrate_M)),
+     layout = coords,
+     vertex.label.font=2,
+     vertex.label.color="gray40",
+     vertex.label.cex=.5
+     )
+```
+
+```{r}
+connectors$weight<-connectors$weight*nodes[connectors$to,"theta"]
+connectors_backup<-connectors
+connectors<-connectors[connectors$weight>=2,]
+
+#foo_col[connectors$to]
+migrate_2Ne<-graph_from_data_frame(connectors, directed = TRUE, vertices = nodes)
+
+#set_vertex_attr(migrate, "theta", index = V(migrate), value = 100*as.numeric(nodes[,2]))
+```
+
+#### Reduced netwrok edges are 2Neu only connections above 2 migrants per generation are shown.
+
+```{r}
+coords<-layout_(migrate_2Ne,
+                in_circle())
+curves<-mat.or.vec(ecount(migrate_2Ne),1)
+
+paste(connectors[,1],connectors[,2],sep="")%in%paste(connectors[,2],connectors[,1],sep="")
+curves[gsub("M_","",connectors[,1])!=gsub("M_","",connectors[,2])]<--0.1
+curves[!(paste(connectors[,1],connectors[,2],sep="")%in%paste(connectors[,2],connectors[,1],sep=""))]<-0
+```
+```{r}
+plot(migrate_2Ne,
+     vertex.size = 50*vertex_attr(migrate_2Ne,"theta"),
+     edge.arrow.size = 0.5,
+     edge.width = connectors$weight/100,
+     edge.color = foo_col[connectors$from],
+     vertex.color = foo_col[V(migrate_2Ne)],
+     edge.curved=curves,
+     layout = coords,
+     vertex.label.font=2,
+     vertex.label.color="gray40",
+     vertex.label.cex=.5
+     )
+```
+
+```{r}
+coords<-layout_(migrate_M,
+                in_circle())
+plot(migrate_M,
+     vertex.size = 50*vertex_attr(migrate_M,"theta"),
+     edge.arrow.size = 0.5,
+     edge.width = connectors$weight/100,
+     edge.color = foo_col[connectors$from],
+     vertex.color = foo_col[V(migrate_M)],
+     edge.curved=seq(-0.3, 0.3, length = ecount(migrate_M)),
+     layout = coords,
+     vertex.label.font=2,
+     vertex.label.color="gray40",
+     vertex.label.cex=.5
+     )
+```
+```{r}
+foo.table<-cbind(nodes,from=sapply(nodes[,1],FUN=function(x){sum(connectors_backup$weight[connectors_backup$from==x])}),to=sapply(nodes[,1],FUN=function(x){sum(connectors_backup$weight[connectors_backup$to==x])}))
+kable(cbind(foo.table[,-1],balance=foo.table$to-foo.table$from))
+
+#kable(
+#  rbind(
+#  c("M_2",
+#      sum(connectors_backup$weight[connectors_backup$from=="M_2"&connectors_backup$to!="M_3"]),
+#      sum(connectors_backup$weight[connectors_backup$to=="M_2"&connectors_backup$from!="M_3"])
+#      ),
+##      c("M_3",
+#      sum(connectors_backup$weight[connectors_backup$from=="M_3"&connectors_backup$to!="M_2"]),
+#      sum(connectors_backup$weight[connectors_backup$to=="M_3"&connectors_backup$from!="M_2"])
+#      )
+#  )
+#)
+```
+
+
+### Phylogenetic signal in Species IDs
+
+```{r}
+#load("/Users/Fernando/Desktop/01_Sanger_paper/final_dataset_v14.Rdata")
+#c(levels(factor(foo_adm$Species))[-1])
+#plan(multicore,workers=12)
+#phylosig_final2<-future_lapply(
+#  levels(factor(foo_adm$Species))[-1],
+#  FUN=function(GRUPO)
+#  {
+#  phylo_signal<-lapply(tree.dataset,
+#       FUN=function(ARBOL)
+#         {
+#         foo_tree<-root(
+#                  ARBOL,
+#                  outgroup = "XXanpa",
+#                  node=NULL,
+#                  resolve.root = TRUE)
+#        groups_mix<-as.numeric(factor(foo_adm[foo_tree$tip.label,"Species"])==GRUPO)
+#        names(groups_mix)<-foo_tree$tip.label
+   #     foo.out<-phytools::phylosig(
+  #          compute.brlen(multi2di(foo_tree)),
+ #           groups_mix, method="lambda", test=TRUE, nsim=100)
+#        return(foo.out)
+#})
+#  return(phylo_signal)
+#})
+#names(phylosig_final2)<-levels(factor(foo_adm$Species))[-1]
+#print(phylosig_final2)
+#save.image("/Users/Fernando/Desktop/01_Sanger_paper/final_dataset_v15.Rdata")
+
+fooeraseme<-melt(sapply(phylosig_final2,FUN=function(x){unlist(unlist(x)[c(1,6,11,16,21)])}))
+colnames(fooeraseme)<-c("gene","sp","value")
+ggplot(fooeraseme,aes(x=1,y=value,fill=sp))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2)) + facet_wrap(vars(sp)) + theme(legend.position = "none")
+```
+```{r}
+ggplot(fooeraseme,aes(x=1,y=value,fill=gene))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2)) + facet_wrap(vars(gene)) + theme(legend.position = "none")
+```
+
+## I.III Concordance between gene phylogenies
+
+### ML
+
+The concordance between gene phylogenies was measured using Nye's similarity measurement (Nye 2000) implemented in r-package treedist. The trees were trimmed using function drop.tip to be made comparable and the number of shared The maximum concordance value was obtained as standarizing factor across loci, and trees with randomized tip assignments were used as random expectation.
+
+```{r}
+tree_similarity_fer<-function(x,y,reps=100)
+{
+  require(TreeDist)
+  require(ape)
+  foo.x<-keep.tip(x,x$tip.label[x$tip.label%in%y$tip.label])
+  foo.y<-keep.tip(y,y$tip.label[y$tip.label%in%x$tip.label])
+  foo.max<-NyeSimilarity(foo.x,foo.x)
+  foo.obs<-NyeSimilarity(foo.x,foo.y)
+  foo.ran<-c(1:reps)
+  foo.ran<-sapply(foo.ran,FUN=function(z){
+  foo.y$tip.label<-sample(foo.y$tip.label)
+   return(NyeSimilarity(foo.x,foo.y))
+  })
+  return(c(foo.max,foo.obs/foo.max,mean(foo.ran)/foo.max))
+}
+
+results_foo<-NULL
+for (i in c(1:length(tree.dataset)))
+{
+  for (j in c(1:length(tree.dataset)))
+{
+    print(paste (i,j))
+    if (i!=j)
+    {
+      results_foo<-rbind(results_foo,tree_similarity_fer(tree.dataset[[i]],tree.dataset[[j]],10))
+    }
+    }
+}
+print(t.test(results_foo[,2],results_foo[,3],paired = TRUE,alternative = "greater"))
+print(t.test(results_foo[,2],results_foo[,3],alternative = "greater"))
+```
+
+### Bayesian. Concordance within loci
+
+```{r}
+results_foo<-NULL
+control_foo<-cbind(
+  sample(c(1:length(all.trees)),1500,replace=TRUE),
+  sample(c(1:length(all.trees)),1500,replace=TRUE),
+  sample(c(1:50),1500,replace=TRUE),
+  sample(c(1:50),1500,replace=TRUE)
+)
+
+control_foo<-control_foo[paste(control_foo[,1],control_foo[,3])!=paste(control_foo[,2],control_foo[,4]),]
+
+control_foo<-control_foo[!(paste(control_foo[,1],control_foo[,3],control_foo[,2],control_foo[,4])%in%paste(control_foo[,2],control_foo[,4],control_foo[,1],control_foo[,3])),]
+
+control_foo<-control_foo[sample(c(1:dim(control_foo)[1]),1000),]
+
+results_foo<-future_apply(control_foo,1,FUN=function(x){
+  return(c(x[1],x[2],x[3],x[4],results_foo,tree_similarity_fer(all.trees[[x[1]]][[x[3]]],all.trees[[x[2]]][[x[4]]],1)))
+  })
+
+results_foo<-t(results_foo)
+same_foo<-factor(results_foo[,1]==results_foo[,2])
+levels(same_foo)<-c("Between","Within")
+ggplot(data.frame(proportion=results_foo[,6],comparison=same_foo),aes(x=comparison,y=proportion,fill=comparison))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))
+
+
+```
+
+### Within and between loci
+
+```{r}
+print(t.test(results_foo[same_foo=="Between",6],results_foo[same_foo=="Within",6],alternative = "less"))
+```
+
+### Between loci, random vs observed
+
+```{r}
+print(t.test(results_foo[same_foo=="Between",6],results_foo[same_foo=="Between",7],alternative = "greater"))
+```
+
+
+## I.IV Multilocus summary of bGMYC delimitations
+
+### Averaging coassignment matrices
+
+```{r bgmyc1}
+names.bGMYC<-c("its","bt","efa","mcm7","rpb1","alpha","hmg")
+#
+#
+#
+#
+#
+#
+recast_probmat <- function (x)
+  {
+  class(x)<-NULL
+  x<-x[rownames(x)!="Xanpa",colnames(x)!="Xanpa"]
+  x<-melt(x)
+  x$Var1<-gsub("[A-Z]","",x$Var1,perl=TRUE)
+  x$Var2<-gsub("[A-Z]","",x$Var2,perl=TRUE)
+  #x<-aggregate(value~Var1+Var2,data_bgmyc_all,FUN = combined_probability)
+  return(acast(x,Var1~Var2,fun.aggregate = mean))
+}
+
+
+x1<-recast_probmat(output.bgmyc.1[[3]])
+x2<-recast_probmat(output.bgmyc.2[[3]])
+x3<-recast_probmat(output.bgmyc.3[[3]])
+x4<-recast_probmat(output.bgmyc.4[[3]])
+x5<-recast_probmat(output.bgmyc.5[[3]])
+
+nombres_tabla<-c(rownames(x1), rownames(x2), rownames(x3), rownames(x4), rownames(x5))
+nombres_tabla<-nombres_tabla[!duplicated(nombres_tabla)]
+nombres_tabla<-nombres_tabla[order(as.numeric(nombres_tabla))]
+
+data_bgmyc_all<-rbind(melt(x1),melt(x2),melt(x3),melt(x4),melt(x5))
+data_bgmyc_all<-acast(data_bgmyc_all,Var1~Var2,fun.aggregate = mean)
+```
+
+### Extended range of K for kmedoids K=1:200
+
+```{r bgmyc_200}
+#coco<-pamk(1-data_bgmyc_all,1:200,diss=TRUE)
+#cluster_solutions<-coco$crit
+#plot(cluster_solutions)
+```
+
+```{r bgmyc_50}
+coco<-pamk(1-data_bgmyc_all,1:50,diss=TRUE)
+cluster_solutions<-coco$crit
+plot(cluster_solutions)
+```
+
+```{r assoc_50}
+# Manually reorder
+foo_bgmyc_clusters<-coco$pamobject$clustering
+
+assoc(table(as.numeric(foo_bgmyc_clusters),condensed_baps_adm[names(foo_bgmyc_clusters),"name"]), shade = TRUE)
+```
+
+### Reduced range of K values K=1:20
+
+```{r bgmyc_20}
+coco<-pamk(1-data_bgmyc_all,1:20,diss=TRUE)
+cluster_solutions<-coco$crit
+plot(cluster_solutions)
+#save.image("/Users/Fernando/Desktop/01_Sanger_paper/14_bGMYC_All_loci/03_Processed/workspace_step5.Rdata")
+```
+
+```{r assoc_20}
+# Manually reorder
+foo_bgmyc_clusters<-coco$pamobject$clustering
+foo_bgmyc_clusters<-factor(foo_bgmyc_clusters,levels = c(2,4,1,7,8,6,5,3))
+
+assoc(table(as.numeric(foo_bgmyc_clusters),condensed_baps_adm[names(foo_bgmyc_clusters),"name"]), shade = TRUE)
+```
+```{r}
+assocstats(table(as.numeric(foo_bgmyc_clusters),condensed_baps_adm[names(foo_bgmyc_clusters),"name"]))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(as.numeric(foo_bgmyc_clusters),condensed_baps_adm[names(foo_bgmyc_clusters),"name"]))
+```
+
+```{r Heatmap_bGMYC}
+
+foo_tabla<-melt(table(as.numeric(foo_bgmyc_clusters),condensed_baps_adm[names(foo_bgmyc_clusters),"name"]))
+foo_tabla$value[foo_tabla$value==0]<-NA
+
+
+  ggplot(foo_tabla,aes(x=Var1,y=Var2,fill=value)) + geom_tile(color = "black") + geom_text(aes(label = value), color = "black", size = 2) +
+    scale_fill_gradient2(low = "#FFFFFF",
+  mid = colorinos.bipolar[7],
+  high = colorinos.bipolar[6],
+  midpoint = 20,
+  space = "Lab",
+  na.value = "#FFFFFF",
+  guide = "colourbar",
+  aesthetics = "fill"
+) +
+  coord_fixed() + theme_bw() 
+```
+
+```{r hmbgmyc}
+# Heatmap 2 Species vs bGMYC
+  
+foo_tabla<-melt(table(condensed_baps_adm[names(foo_bgmyc_clusters),"Species"],as.numeric(foo_bgmyc_clusters)))
+foo_tabla$value[foo_tabla$value==0]<-NA
+
+
+ggplot(foo_tabla,
+       aes(x=Var2,y=Var1,fill=value)) +
+  geom_tile(color = "black") + 
+  geom_text(aes(label = value), color = "black", size = 2) +
+  scale_fill_gradient2(low = "#FFFFFF",
+  mid = colorinos.bipolar[7],
+  high = colorinos.bipolar[6],
+  midpoint = 20,
+  space = "Lab",
+  na.value = "#FFFFFF",
+  guide = "colourbar",
+  aesthetics = "fill") +
+  coord_fixed() +
+  theme_bw() 
+```
+```{r}
+assocstats(table(condensed_baps_adm[names(foo_bgmyc_clusters),"Species"],as.numeric(foo_bgmyc_clusters)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[names(foo_bgmyc_clusters),"Species"],as.numeric(foo_bgmyc_clusters)))
+```
+
+```{r bGMYC_50_all}
+foo_bgmyc_clusters<-foo_bgmyc_clusters[rownames(condensed_baps_adm)]
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo,clusters = foo_bgmyc_clusters[orden.foo])
+foo<-melt(foo[,c(1,26)])  
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=clusters),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar, na.value="white") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p)
+```
+
+
+## Single locus bGMYC
+
+### ITS
+
+```{r its_10}
+coco.its<-pamk(1-x1,2:10,diss=TRUE)
+foo_bgmyc_clusters.its<-coco.its$pamobject$clustering
+foo_bgmyc_clusters.its<-foo_bgmyc_clusters.its[rownames(condensed_baps_adm)]
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo,clusters = as.factor(foo_bgmyc_clusters.its[orden.foo]))
+foo<-melt(foo[,c(1,26)])  
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=clusters),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar, na.value="white") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p)
+#+ facet_wrap(vars(clusters)))
+```
+
+```{r its_100, fig.dim = c(12, 20)}
+coco.its<-pamk(1-x1,2:100,diss=TRUE)
+foo_bgmyc_clusters.its<-coco.its$pamobject$clustering
+foo_bgmyc_clusters.its<-foo_bgmyc_clusters.its[rownames(condensed_baps_adm)]
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo,clusters = as.factor(foo_bgmyc_clusters.its[orden.foo]))
+foo<-melt(foo[,c(1,26)])  
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=clusters),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar, na.value="white", guide = "none") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p + facet_wrap(vars(clusters)))
+```
+
+#### Association with BAPS
+
+```{r}
+assocstats(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"name"],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"name"],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+#### Association with species
+
+```{r}
+assocstats(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"Species"],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"Species"],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+#### Association with multilocus bGMYC
+
+```{r}
+assocstats(table(foo_bgmyc_clusters[names(foo_bgmyc_clusters.its)],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(foo_bgmyc_clusters[names(foo_bgmyc_clusters.its)],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+### Beta Tubulin
+
+```{r bt1}
+coco.its<-pamk(1-x2,2:10,diss=TRUE)
+foo_bgmyc_clusters.its<-coco.its$pamobject$clustering
+foo_bgmyc_clusters.its<-foo_bgmyc_clusters.its[rownames(condensed_baps_adm)]
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo,clusters = as.factor(foo_bgmyc_clusters.its[orden.foo]))
+foo<-melt(foo[,c(1,26)])  
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=clusters),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar, na.value="white") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p)
+#+ facet_wrap(vars(clusters)))
+```
+
+```{r bt_100, fig.dim = c(12, 20)}
+coco.its<-pamk(1-x2,2:100,diss=TRUE)
+foo_bgmyc_clusters.its<-coco.its$pamobject$clustering
+foo_bgmyc_clusters.its<-foo_bgmyc_clusters.its[rownames(condensed_baps_adm)]
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo,clusters = as.factor(foo_bgmyc_clusters.its[orden.foo]))
+foo<-melt(foo[,c(1,26)])  
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=clusters),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar, na.value="white", guide = "none") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p + facet_wrap(vars(clusters)))
+```
+
+#### Association with BAPS
+
+```{r}
+assocstats(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"name"],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"name"],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+#### Association with species
+
+```{r}
+assocstats(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"Species"],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"Species"],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+#### Association with multilocus bGMYC
+
+```{r}
+assocstats(table(foo_bgmyc_clusters[names(foo_bgmyc_clusters.its)],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(foo_bgmyc_clusters[names(foo_bgmyc_clusters.its)],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+### Elongation factor alpha
+
+```{r efa_1}
+coco.its<-pamk(1-x3,2:15,diss=TRUE)
+foo_bgmyc_clusters.its<-coco.its$pamobject$clustering
+foo_bgmyc_clusters.its<-foo_bgmyc_clusters.its[rownames(condensed_baps_adm)]
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo,clusters = as.factor(foo_bgmyc_clusters.its[orden.foo]))
+foo<-melt(foo[,c(1,26)])  
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=clusters),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar, na.value="white") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p)
+#+ facet_wrap(vars(clusters)))
+```
+
+```{r efa_100, fig.dim = c(12, 20)}
+coco.its<-pamk(1-x3,2:15,diss=TRUE)
+foo_bgmyc_clusters.its<-coco.its$pamobject$clustering
+foo_bgmyc_clusters.its<-foo_bgmyc_clusters.its[rownames(condensed_baps_adm)]
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo,clusters = as.factor(foo_bgmyc_clusters.its[orden.foo]))
+foo<-melt(foo[,c(1,26)])  
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=clusters),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar, na.value="white", guide = "none") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p + facet_wrap(vars(clusters)))
+```
+
+#### Association with BAPS
+
+```{r}
+assocstats(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"name"],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"name"],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+#### Association with species
+
+```{r}
+assocstats(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"Species"],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"Species"],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+#### Association with multilocus bGMYC
+
+```{r}
+assocstats(table(foo_bgmyc_clusters[names(foo_bgmyc_clusters.its)],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(foo_bgmyc_clusters[names(foo_bgmyc_clusters.its)],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+### MCM7
+
+```{r mcm7_1}
+coco.its<-pamk(1-x4,2:10,diss=TRUE)
+foo_bgmyc_clusters.its<-coco.its$pamobject$clustering
+foo_bgmyc_clusters.its<-foo_bgmyc_clusters.its[rownames(condensed_baps_adm)]
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo,clusters = as.factor(foo_bgmyc_clusters.its[orden.foo]))
+foo<-melt(foo[,c(1,26)])  
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=clusters),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar, na.value="white") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p)
+#+ facet_wrap(vars(clusters)))
+```
+
+```{r mcm7_100, fig.dim = c(12, 20)}
+coco.its<-pamk(1-x4,2:100,diss=TRUE)
+foo_bgmyc_clusters.its<-coco.its$pamobject$clustering
+foo_bgmyc_clusters.its<-foo_bgmyc_clusters.its[rownames(condensed_baps_adm)]
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo,clusters = as.factor(foo_bgmyc_clusters.its[orden.foo]))
+foo<-melt(foo[,c(1,26)])  
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=clusters),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar, na.value="white", guide= "none") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p + facet_wrap(vars(clusters)))
+```
+
+#### Association with BAPS
+
+```{r}
+assocstats(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"name"],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"name"],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+#### Association with species
+
+```{r}
+assocstats(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"Species"],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"Species"],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+#### Association with multilocus bGMYC
+
+```{r}
+assocstats(table(foo_bgmyc_clusters[names(foo_bgmyc_clusters.its)],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(foo_bgmyc_clusters[names(foo_bgmyc_clusters.its)],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+### RPB1
+
+```{r rpb1_1}
+coco.its<-pamk(1-x5,2:10,diss=TRUE)
+foo_bgmyc_clusters.its<-coco.its$pamobject$clustering
+foo_bgmyc_clusters.its<-foo_bgmyc_clusters.its[rownames(condensed_baps_adm)]
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo,clusters = as.factor(foo_bgmyc_clusters.its[orden.foo]))
+foo<-melt(foo[,c(1,26)])  
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=clusters),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar, na.value="white") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p)
+#+ facet_wrap(vars(clusters)))
+```
+
+```{r rpb1_100, fig.dim = c(12, 20)}
+coco.its<-pamk(1-x5,2:100,diss=TRUE)
+foo_bgmyc_clusters.its<-coco.its$pamobject$clustering
+foo_bgmyc_clusters.its<-foo_bgmyc_clusters.its[rownames(condensed_baps_adm)]
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo,clusters = as.factor(foo_bgmyc_clusters.its[orden.foo]))
+foo<-melt(foo[,c(1,26)])  
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=clusters),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos.bipolar, na.value="white", guide = "none") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p + facet_wrap(vars(clusters)))
+```
+
+#### Association with BAPS
+
+```{r}
+assocstats(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"name"],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"name"],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+#### Association with species
+
+```{r}
+assocstats(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"Species"],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[names(foo_bgmyc_clusters.its),"Species"],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+#### Association with multilocus bGMYC
+
+```{r}
+assocstats(table(foo_bgmyc_clusters[names(foo_bgmyc_clusters.its)],as.numeric(foo_bgmyc_clusters.its)))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(foo_bgmyc_clusters[names(foo_bgmyc_clusters.its)],as.numeric(foo_bgmyc_clusters.its)))
+```
+
+# Part II. Mating type coocurrence
+
+## II.I Read data and CD-HIT
+
+```{r mat1}
+i=9
+for (file in c(
+		"/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/proteins/alpha_v13_exons.fasta",
+		"/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/proteins/hmg_v13_Only_exons.fasta"
+		))
+		{
+		sequences<-read.dna(file,format="fasta")
+		seq.dataset[[i]]<-sequences
+		names.dataset[[i]]<-strsplit(rownames(sequences),split="_")
+		i<-i+1
+		}
+#	library(phangorn)
+	i=11
+	for (file in c(
+		"/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/proteins/alpha_v13_translation.fasta",
+		"/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/proteins/hmg_v13_shortened_translation.fasta"
+		))
+		{
+		sequences<-read.aa(file,format="fasta")
+		seq.dataset[[i]]<-sequences
+		names.dataset[[i]]<-strsplit(names(sequences),split="_")
+		i<-i+1
+		}
+```
+
+```{r mat2}
+for ( i in 9:12)
+	{
+	for (j in 1:length(names.dataset[[i]]))
+	{
+	names.dataset[[i]][[j]]<-names.dataset[[i]][[j]][1]
+	}
+	names.dataset[[i]]<-unlist(names.dataset[[i]])
+	}
+#alpha 
+names.dataset[[9]][is.na(as.numeric(names.dataset[[9]]))]<-c("207","205")
+names.dataset$alpha_tr<-gsub("X","",names.dataset$alpha_tr)
+names.dataset[[11]][is.na(as.numeric(names.dataset[[11]]))]<-c("207","205")
+#hmg_tr"
+names.dataset$hmg_tr<-gsub("X","",names.dataset$hmg_tr)
+#
+#
+#
+rownames(seq.dataset$alpha)<-names.dataset$alpha
+rownames(seq.dataset$hmg)<-names.dataset$hmg
+names(seq.dataset$alpha_tr)<-names.dataset$alpha_tr
+names(seq.dataset$hmg_tr)<-names.dataset$hmg_tr
+#
+names.dataset[[8]][names.dataset[[8]]=="00"]<-"0"
+names.dataset[[9]][names.dataset[[9]]=="00"]<-"0"
+#
+# Renumber doubled from Vondrak
+#
+a<-as.character(seq(2,56,2))
+b<-as.character(seq(1,55,2))
+for (i in 9:length(names.dataset))
+	{
+		for (j in 1:28)
+		{
+			names.dataset[[i]][names.dataset[[i]]==a[j]]<-b[j]
+		}
+	}
+rm(a,b)
+
+
+reduced.dataset$alpha<-seq.dataset$alpha[names.dataset$alpha%in%rownames(dataset),]
+reduced.dataset$hmg<-seq.dataset$hmg[names.dataset$hmg%in%rownames(dataset),]
+
+reduced.dataset$alpha_tr<-subset(seq.dataset$alpha_tr,names(seq.dataset$alpha_tr)%in%names.dataset$alpha_tr[names.dataset$alpha_tr%in%rownames(dataset)])
+reduced.dataset$hmg_tr<-subset(seq.dataset$hmg_tr,names(seq.dataset$hmg_tr)%in%names.dataset$hmg_tr[names.dataset$hmg_tr%in%rownames(dataset)])
+```
+
+```{r mat3}
+#
+# 5. Export alignment files
+#------------------------------
+#for (i in 9:(length(names.dataset)-2))
+#{
+#if (is.list(names.dataset[[i]])==TRUE)#
+#	{
+#	names(seq.dataset[[i]])<-names.dataset[[i]]
+#	write.dna(seq.dataset[[i]][names.dataset[[i]]%in%rownames(dataset)],paste("/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/Subset_",names(names.dataset)[i],".fasta",sep=""),format="fasta",nbcol=-1,colsep="")
+#	} else
+#		{
+#		rownames(seq.dataset[[i]])<-names.dataset[[i]]
+#		write.dna(seq.dataset[[i]][names.dataset[[i]]%in%rownames(dataset),],paste("/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/Subset_",names(names.dataset)[i],".fasta",sep=""),format="fasta",nbcol=-1,colsep="")
+#		}
+#
+#}
+#
+#
+#
+#
+#
+#
+# Factor dataset for bipartite networks
+#
+alpha.haplo<-mat.or.vec(length(reduced.dataset$alpha_tr),2)
+rownames(alpha.haplo)<-names(reduced.dataset$alpha_tr)
+for (i in 1:dim(alpha.haplo)[1]) 
+	{
+	alpha.haplo[i,1]<-paste(as.vector(reduced.dataset$alpha_tr)[[i]],collapse="")
+	}
+alpha.haplo<-alpha.haplo[!(rownames(alpha.haplo)%in%c("377","1073","1170","1171")),]
+alpha.haplo[,2]<-factor(alpha.haplo[,1])
+
+hmg.haplo<-mat.or.vec(length(reduced.dataset$hmg_tr),2)
+rownames(hmg.haplo)<-names(reduced.dataset$hmg_tr)
+for (i in 1:dim(hmg.haplo)[1]) 
+	{
+	hmg.haplo[i,1]<-paste(as.character(reduced.dataset$hmg_tr)[[i]],collapse="")
+	}
+hmg.haplo<-hmg.haplo[!(rownames(hmg.haplo)%in%c("377","1073","1170","1171")),]
+hmg.haplo[,2]<-factor(hmg.haplo[,1])
+#
+#
+#
+foo.alpha<-as.character(sort(as.numeric(rownames(alpha.haplo))))[duplicated(as.character(sort(as.numeric(rownames(alpha.haplo)))))]
+#
+foo.hmg<-as.character(sort(as.numeric(rownames(hmg.haplo))))[duplicated(as.character(sort(as.numeric(rownames(hmg.haplo)))))]
+foo.both<-c(foo.alpha,foo.hmg)
+foo.both<-foo.both[!duplicated(foo.both)]
+foo.both<-as.character(sort(as.numeric(foo.both)))
+foo.names<-c(rownames(alpha.haplo),rownames(hmg.haplo))
+foo.names<-as.character(sort(as.numeric(foo.names[!duplicated(foo.names)])))
+#
+#
+out.haps<-NULL
+for (i in foo.names)
+	{
+	if(i%in%rownames(alpha.haplo)&i%in%rownames(hmg.haplo))
+	  {
+	  a<-alpha.haplo[rownames(alpha.haplo)==i,2]
+	  h<-hmg.haplo[rownames(hmg.haplo)==i,2]
+	    for(j in a)
+	     {
+	      for (k in h)
+	      {
+	      out.haps<-rbind(out.haps,c(i,j,k))
+	      }
+	    }
+	} else if (i%in%rownames(alpha.haplo)&!(i%in%rownames(hmg.haplo)))
+	  {
+	  a<-alpha.haplo[rownames(alpha.haplo)==i,2]
+	  out.haps<-rbind(out.haps,cbind(i,a,0))
+	  } else if (!(i%in%rownames(alpha.haplo))&i%in%rownames(hmg.haplo))
+      {
+	    a<-hmg.haplo[rownames(hmg.haplo)==i,2]
+	    out.haps<-rbind(out.haps,cbind(i,0,a))
+	    }
+	}
+	rownames(out.haps)<-out.haps[,1]
+#
+#
+# 4. External Esport for clustering in CD-Hit
+#
+#alpha.haplo.seq<-as.character(newnames.reduced.dataset$alpha_tr)
+#alpha.haplo.seq<-subset(alpha.haplo.seq,!duplicated(alpha.haplo[,2]))
+#rownames(alpha.haplo.seq)<-paste("SeqID",alpha.haplo[!duplicated(alpha.haplo[,2]),2],"_",table(alpha.haplo[,2])[as.numeric(alpha.haplo[!duplicated(alpha.haplo[,2]),2])],sep="")
+#alpha.haplo.seq<-alpha.haplo.seq[order(table(alpha.haplo[,2])[as.numeric(alpha.haplo[!duplicated(alpha.haplo[,2]),2])],decreasing=T),]
+
+#hmg.haplo.seq<-as.character(newnames.reduced.dataset$hmg_tr)
+#hmg.haplo.seq<-subset(hmg.haplo.seq,!duplicated(hmg.haplo[,2]))
+#rownames(hmg.haplo.seq)<-paste("SeqID",hmg.haplo[!duplicated(hmg.haplo[,2]),2],"_",table(hmg.haplo[,2])[as.numeric(hmg.haplo[!duplicated(hmg.haplo[,2]),2])],sep="")
+#hmg.haplo.seq<-hmg.haplo.seq[order(table(hmg.haplo[,2])[as.numeric(hmg.haplo[!duplicated(hmg.haplo[,2]),2])],decreasing=T),]
+
+#write.aa(alpha.haplo.seq,"/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/alpha_collapsed.fasta")
+#write.aa(hmg.haplo.seq,"/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/hmg_collapsed.fasta")
+#
+# Import CD HIT
+#
+import.cd.hit<-function(file,reference)
+{
+require(stringr)
+foo.read<-readLines(file)
+foo.alpha99<-list()
+a<-grep(">Cluster ",foo.read);
+a<-c(a,length(foo.read))
+for (i in 1:(length(a)-1))
+	{
+			if((a[i]+1)==(a[i+1]-1))
+			{
+				foo.alpha99[[i]]<-foo.read[(a[i]+1)]
+			}
+			else
+				{
+					foo.alpha99[[i]]<-foo.read[(a[i]+1):(a[i+1]-1)]
+				}
+			}
+	names(foo.alpha99)<-foo.read[a[-length(a)]]
+	for (i in 1:length(foo.alpha99)) foo.alpha99[[i]]<-str_extract(foo.alpha99[[i]], ">SeqID[0-9]+")
+	for (i in 1:length(foo.alpha99)) foo.alpha99[[i]]<-gsub(">SeqID","",foo.alpha99[[i]])
+	names(foo.alpha99)<-gsub(">Cluster ","",names(foo.alpha99))
+	out<-mat.or.vec(length(reference[,2]),1)
+	for (i in 1:length(foo.alpha99))
+	{out[reference[,2]%in%foo.alpha99[[i]]]<-names(foo.alpha99)[i]}
+	out<-as.numeric(out)+1
+	return(out)
+}
+
+alpha.haplo<-cbind(alpha.haplo,import.cd.hit("/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/proteins/alpha99.clstr",alpha.haplo))
+alpha.haplo<-cbind(alpha.haplo,import.cd.hit("/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/proteins/alpha97.clstr",alpha.haplo))
+alpha.haplo<-cbind(alpha.haplo,import.cd.hit("/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/proteins/alpha95.clstr",alpha.haplo))
+
+hmg.haplo<-cbind(hmg.haplo,import.cd.hit("/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/proteins/hmg99.clstr",hmg.haplo))
+hmg.haplo<-cbind(hmg.haplo,import.cd.hit("/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/proteins/hmg97.clstr",hmg.haplo))
+hmg.haplo<-cbind(hmg.haplo,import.cd.hit("/Users/Fernando/Desktop/01_Sanger_paper/6_Mating_types/proteins/hmg95.clstr",hmg.haplo))
+```
+
+```{r}
+#
+# 99%
+#
+out.99<-NULL
+out.97<-NULL
+out.95<-NULL
+
+for (i in foo.names)
+	{
+	if(i%in%rownames(alpha.haplo)&i%in%rownames(hmg.haplo))
+	{
+	a<-alpha.haplo[rownames(alpha.haplo)==i,3]
+	h<-hmg.haplo[rownames(hmg.haplo)==i,3]
+	for(j in a)
+	{
+	for (k in h)
+	{
+	out.99<-rbind(out.99,c(i,j,k))
+	}
+	}
+	}
+	if (i%in%rownames(alpha.haplo)&!(i%in%rownames(hmg.haplo)))
+	{
+	a<-alpha.haplo[rownames(alpha.haplo)==i,3]
+	out.99<-rbind(out.99,cbind(i,a,0))
+	}
+	else if (!(i%in%rownames(alpha.haplo))&i%in%rownames(hmg.haplo))
+	{
+	a<-hmg.haplo[rownames(hmg.haplo)==i,3]
+	out.99<-rbind(out.99,cbind(i,0,a))
+	}
+	}
+	rownames(out.99)<-out.99[,1]
+	
+out.99<-out.99[!(rownames(out.99)%in%c("199","377","1073","1170","1171")),]
+#
+# 97%
+#
+for (i in foo.names)
+	{
+	if(i%in%rownames(alpha.haplo)&i%in%rownames(hmg.haplo))
+	{
+	a<-alpha.haplo[rownames(alpha.haplo)==i,4]
+	h<-hmg.haplo[rownames(hmg.haplo)==i,4]
+	for(j in a)
+	{
+	for (k in h)
+	{
+	out.97<-rbind(out.97,c(i,j,k))
+	}
+	}
+	}
+	if (i%in%rownames(alpha.haplo)&!(i%in%rownames(hmg.haplo)))
+	{
+	a<-alpha.haplo[rownames(alpha.haplo)==i,4]
+	out.97<-rbind(out.97,cbind(i,a,0))
+	}
+	else if (!(i%in%rownames(alpha.haplo))&i%in%rownames(hmg.haplo))
+	{
+	a<-hmg.haplo[rownames(hmg.haplo)==i,4]
+	out.97<-rbind(out.97,cbind(i,0,a))
+	}
+	}
+	rownames(out.97)<-out.97[,1]
+	
+out.97<-out.97[!(rownames(out.97)%in%c("199","377","1073","1170","1171")),]
+#
+# 95% Similarity
+#
+for (i in foo.names)
+	{
+	if(i%in%rownames(alpha.haplo)&i%in%rownames(hmg.haplo))
+	{
+	a<-alpha.haplo[rownames(alpha.haplo)==i,5]
+	h<-hmg.haplo[rownames(hmg.haplo)==i,5]
+	for(j in a)
+	{
+	for (k in h)
+	{
+	out.95<-rbind(out.95,c(i,j,k))
+	}
+	}
+	}
+	if (i%in%rownames(alpha.haplo)&!(i%in%rownames(hmg.haplo)))
+	{
+	a<-alpha.haplo[rownames(alpha.haplo)==i,5]
+	out.95<-rbind(out.95,cbind(i,a,0))
+	}
+	else if (!(i%in%rownames(alpha.haplo))&i%in%rownames(hmg.haplo))
+	{
+	a<-hmg.haplo[rownames(hmg.haplo)==i,5]
+	out.95<-rbind(out.95,cbind(i,0,a))
+	}
+	}
+	rownames(out.95)<-out.95[,1]
+	
+out.95<-out.95[!(rownames(out.95)%in%c("199","377","1073","1170","1171")),]
+```
+
+## II.II Compartmentalization and modularity
+
+### At haplotype level (Only compartments)
+
+```{r}
+table.mating.types<-out.haps[,-1]
+table.mating.types<-table(table.mating.types[,1],table.mating.types[,2])
+table.mating.types<-table.mating.types[-1,-1]
+table.mating.types<-table.mating.types[rowSums(table.mating.types)>0,colSums(table.mating.types)>0]
+comps<-compart(table.mating.types)
+```
+
+#### Network compartments
+
+```{r compartments_haplotype_level}
+colorinos_compartments<-colorRampPalette(colorinos.bipolar)(comps$n.compart)
+plotweb(table.mating.types)
+```
+```{r}
+kable(networklevel(table.mating.types))
+```
+```{r}
+kable(grouplevel(table.mating.types))
+```
+
+
+### Comps vs species
+
+### At 99% similarity level
+
+```{r}
+table.mating.types<-out.99[,-1]
+table.mating.types<-table(table.mating.types[,1],table.mating.types[,2])
+table.mating.types<-table.mating.types[-1,-1]
+table.mating.types<-table.mating.types[rowSums(table.mating.types)>0,colSums(table.mating.types)>0]
+comps<-compart(table.mating.types)
+class(table.mating.types)<-NULL
+cubo<-as.matrix(table.mating.types)
+class(cubo)<-"matrix"
+modules99<-metaComputeModules(cubo,N=5, steps=1e+05)
+```
+
+```{r compartments_99_level}
+colorinos_compartments<-colorRampPalette(colorinos.bipolar)(comps$n.compart)
+plotweb(modules99@moduleWeb,
+        col.high = colorinos_compartments[(apply(comps$cweb,2,min)*-1)[colnames(modules99@moduleWeb)]],
+        col.low =  colorinos_compartments[(apply(comps$cweb,1,min)*-1)[rownames(modules99@moduleWeb)]],
+        bor.col.high = colorinos_compartments[(apply(comps$cweb,2,min)*-1)[colnames(modules99@moduleWeb)]],
+        bor.col.low =  colorinos_compartments[(apply(comps$cweb,1,min)*-1)[rownames(modules99@moduleWeb)]],
+        bor.col.interaction = 1, y.width.low =0.15, y.width.high = 0.15)
+```
+
+```{r modules_99_level}
+foo1<-modules99@modules[-1,-c(1,2)]
+foo2<-foo1[,(1+dim(modules99@originalWeb)[1]):dim(foo1)[2]]
+foo1<-foo1[,1:dim(modules99@originalWeb)[1]]
+foo1<-apply(foo1,2,FUN = function(x){which(x!=0)})
+names(foo1)<-rownames(modules99@originalWeb)
+foo2<-apply(foo2,2,FUN = function(x){which(x!=0)})
+names(foo2)<-colnames(modules99@originalWeb)
+
+colorinos_modules<-colorRampPalette(colorinos.bipolar)(dim(modules99@modules)[1]-1)
+
+plotweb(modules99@moduleWeb,
+        col.high = colorinos_modules[foo2[colnames(modules99@moduleWeb)]],
+        col.low =  colorinos_modules[foo1[rownames(modules99@moduleWeb)]],
+        bor.col.high = colorinos_modules[foo2[colnames(modules99@moduleWeb)]],
+        bor.col.low =  colorinos_modules[foo1[rownames(modules99@moduleWeb)]],
+        bor.col.interaction = 1, y.width.low =0.1, y.width.high = 0.1)
+```
+
+#### Donut plot compartments
+
+```{r}
+out.99.bckup<-out.99
+out.99<-cbind(out.99,0,0,0)
+out.99<-out.99[,-1]
+colnames(out.99)<-c("alpha","hmg","compartments","modules1","modules2")
+
+for (i in 1:length(rownames(out.99)))
+	{
+		if (out.99[i,1]!="0"&out.99[i,2]!="0")
+		{
+		out.99[i,3]<-comps$cweb[out.99[i,1],out.99[i,2]]	
+			}
+		else if (out.99[i,1]!="0"&out.99[i,1]%in%rownames(comps$cweb))
+		{
+		out.99[i,3]<-min(as.numeric(comps$cweb[out.99[i,1],]))
+		}
+		else if (out.99[i,2]!="0"&out.99[i,2]%in%colnames(comps$cweb))
+		{
+		out.99[i,3]<-min(as.numeric(comps$cweb[,out.99[i,2]]))
+		}	
+}
+out.99[,4]<-foo1[as.character(out.99[,1])]
+out.99[,5]<-foo1[as.character(out.99[,2])]
+
+
+
+#out.99[is.na(out.99[,4]),4]<-foo2[as.character(out.99[,2])][is.na(out.99[,4])]
+out.99[,3]<-as.numeric(out.99[,3])*-1
+out.99[,4]<-as.numeric(out.99[,4])
+out.99[,5]<-as.numeric(out.99[,5])
+#
+#
+rownames(out.99)[duplicated(rownames(out.99))]<-paste(rownames(out.99)[duplicated(rownames(out.99))],".1",sep="")
+rownames(out.99)[duplicated(rownames(out.99))]<-gsub("\\.1","\\.2",rownames(out.99)[duplicated(rownames(out.99))])
+rownames(out.99)[duplicated(rownames(out.99))]<-gsub("\\.2","\\.3",rownames(out.99)[duplicated(rownames(out.99))])
+rownames(out.99)[duplicated(rownames(out.99))]<-gsub("\\.3","\\.4",rownames(out.99)[duplicated(rownames(out.99))])
+#
+```
+
+```{r}
+foo_modules<-mat.or.vec(length(orden.foo),3)
+rownames(foo_modules)<-orden.foo
+colnames(foo_modules)<-colnames(out.99)[3:5]
+foo_reduced<-out.99[rownames(out.99)%in%orden.foo,3:5]
+foo_modules[rownames(foo_reduced),]<-foo_reduced
+rm(foo_reduced)
+#
+#
+#
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo, foo_modules[orden.foo,])
+foo<-melt(foo[,c(1,26)]) 
+foo$compartments[foo$compartments==0]<-NA
+foo$compartments<-factor(foo$compartments,levels=1:comps$n.compart)
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=compartments),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos_compartments,na.value="white") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p)
+```
+
+```{r}
+print(p + facet_wrap(vars((compartments!=1|is.na(compartments)))))
+```
+
+#### Donut plots Modules
+
+```{r}
+foo<-condensed_baps_adm[orden.foo,]
+foo<-cbind(orden=factor(c(1:dim(foo)[1])),foo, foo_modules[orden.foo,])
+foo<-melt(foo[,c(1,28)]) 
+foo$modules2[foo$modules2==0]<-NA
+foo$modules2<-factor(foo$modules2,levels=names(table(foo$modules2))[order(as.numeric(table(foo$modules2)),decreasing=TRUE)])
+  p<-ggplot(foo) +
+  geom_bar(aes(x=orden, y=1,fill=modules2),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos_modules,na.value="white") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+   geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + coord_polar() 
+print(p)
+```
+
+```{r}
+print(p + facet_wrap(vars(modules2)))
+```
+```{r}
+kable(networklevel(table.mating.types))
+```
+```{r}
+kable(grouplevel(table.mating.types))
+```
+
+```{r}
+#save.image('/Users/Fernando/Desktop/01_Sanger_paper/final_dataset_v16final.Rdata')
+```
+
+```{r}
+# Heatmap 3 Species vs modules
+  
+foo_tabla<-melt(table(condensed_baps_adm[as.character(rownames(foo)),2],foo$modules))
+foo_tabla$value[foo_tabla$value==0]<-NA
+
+
+  ggplot(foo_tabla,aes(x=Var2,y=Var1,fill=value)) + geom_tile(color = "black") + geom_text(aes(label = value), color = "black", size = 2) +
+    scale_fill_gradient2(low = "#FFFFFF",
+  mid = colorinos.bipolar[7],
+  high = colorinos.bipolar[6],
+  midpoint = 20,
+  space = "Lab",
+  na.value = "#FFFFFF",
+  guide = "colourbar",
+  aesthetics = "fill"
+) +
+  coord_fixed() + theme_bw()   
+```
+
+```{r}
+write.table(cbind(condensed_baps_adm,foo_bgmyc_clusters[rownames(condensed_baps_adm)],out.99[rownames(condensed_baps_adm)]),"/Users/Fernando/Desktop/01_Sanger_paper/final_dataset_ferdi.txt")
+```
+
+## II.III Networks at individual level
+
+```{r}
+library(reshape2)
+library(ggplot2)
+library(fpc)
+library(igraph)
+library(robin)
+library(scales)
+#
+# Create network of 99% similarity sequence clusters 
+#
+network_indivs<-mat.or.vec(length(rownames(out.99)[!duplicated(rownames(out.99))]),length(rownames(out.99)[!duplicated(rownames(out.99))]))
+rownames(network_indivs)<-rownames(out.99)[!duplicated(rownames(out.99))]
+colnames(network_indivs)<-rownames(out.99)[!duplicated(rownames(out.99))]
+names_foo_network<-sapply(strsplit(rownames(out.99),"\\."),`[`,1)                        
+for (foo.levels in levels(factor(out.99[,1]))[-1])
+{
+  foo_select<-names_foo_network[out.99[,1]==foo.levels]
+  network_indivs[foo_select,foo_select]<-1
+}
+for (foo.levels in levels(factor(out.99[,2]))[-1])
+{
+  foo_select<-names_foo_network[out.99[,2]==foo.levels]
+  network_indivs[foo_select,foo_select]<-network_indivs[foo_select,foo_select]+1
+}
+rownames(network_indivs)<-paste("s",rownames(network_indivs),sep="_")
+colnames(network_indivs)<-paste("s",colnames(network_indivs),sep="_")
+network_indivs<-network_indivs[!(rowSums(network_indivs)==diag(network_indivs)),!(rowSums(network_indivs)==diag(network_indivs))]
+network_indivs[network_indivs==2]<-1
+network_indivs[network_indivs==3]<-1
+uni_graph<-igraph::graph_from_adjacency_matrix(network_indivs, mode ="undirected",diag=FALSE)
+```
+
+### Compartmentalization
+
+```{r}
+#
+# Components
+#
+components<-igraph::components(uni_graph)
+#
+# Communities
+#
+communities_mat<-igraph::communities(components)
+#
+# Plot Graph with BAPS assignments
+#
+plot.igraph(uni_graph,layout=layout_with_fr(uni_graph),vertex.size=2, edge.arrow.size=0.2)
+```
+
+### Test modularity algorythms
+
+```{r}
+
+uni_graph2<-prepGraph(file=uni_graph, file.format="igraph")
+attributes<-vertex_attr(uni_graph2, index = V(uni_graph2))
+set.seed(10)
+VI_In<-list()
+comp<-list()
+for (DA in c("walktrap", "louvain", "labelProp", "infomap"))
+{
+  members_In <- membershipCommunities(graph=uni_graph, method=DA)
+  VI_In[[DA]] <- compare(components$membership, members_In, method="vi")
+  for (DA1 in c("walktrap", "louvain", "labelProp", "infomap"))
+  {
+    if(DA!=DA1) {
+      comp[[paste(DA,DA1,sep="_")]]<-robinCompare(graph=uni_graph2,method1 = DA, method2 = DA1, measure = "vi",type = "independent")
+    }
+  }  
+}
+for (i in 1:length(comp))
+  {
+  comp_foo<-comp[[i]]
+  foo_bar1<-sapply(strsplit(names(comp)[i],"_"),`[`,1)
+  foo_bar2<-sapply(strsplit(names(comp)[i],"_"),`[`,2)
+  print(plotRobin(uni_graph2, model1=comp_foo$Mean1, model2=comp_foo$Mean2, legend = c(foo_bar1,foo_bar2), 
+                  title = "Robin plot comparison based on VI"))
+}
+```
+
+### Model selection based on BF
+
+#### Simple random model
+
+```{r}
+graphRandomCM <- random(graph=uni_graph2)
+proc_CM<-list()
+for (DA in c("walktrap", "louvain", "labelProp", "infomap"))
+{
+  proc_CM[[DA]] <- robinRobust(graph=uni_graph2, graphRandom=graphRandomCM,
+                       measure="vi", method=DA, type="independent")
+}
+
+for (i in 1:length(proc_CM))
+{
+  comp_foo<-proc_CM[[i]]
+  print(plotRobin(uni_graph2, model1=comp_foo$Mean, model2=comp_foo$MeanRandom, legend = c(names(proc_CM)[i],"Null"), 
+                  title = "Robin plot robustness based on VI"))
+}
+#
+#
+#
+results_Robin<-mat.or.vec(length(proc_CM),4)
+rownames(results_Robin)<-names(proc_CM)
+colnames(results_Robin)<-c("bf_cm","auc_cm","bf_dk","auc_dk")
+for (i in 1:length(proc_CM))
+{
+  results_Robin[i,1] <- robinGPTest(model1=proc_CM[[i]]$Mean, model2=proc_CM[[i]]$MeanRandom)
+AUC <- robinAUC(graph=uni_graph2, model1=proc_CM[[i]]$Mean,
+                model2=proc_CM[[i]]$MeanRandom)
+results_Robin[i,2] <- AUC$area2/AUC$area1
+robinFDATest(graph=uni_graph2, model1=proc_CM[[i]]$Mean, model2=proc_CM[[i]]$MeanRandom)
+}
+```
+
+#### Random model based on dk-series
+
+```{r}
+#
+# Complex random model dk-series
+#
+#write_graph(
+#  uni_graph2,
+#  "/Users/Fernando/Desktop/01_paper_sanger_drive/export_graph",
+#  format = "edgelist")
+#save.image('/Users/Fernando/Desktop/01_Sanger_paper/improvement_dataset.Rdata')
+save.image('/Users/Fernando/Desktop/01_Sanger_paper/final_dataset_v17final.Rdata')
+
+graphRandomDK <- prepGraph(file="/Users/Fernando/Desktop/01_paper_sanger_drive/dk2.1_export_graph",
+                           file.format = "edgelist")
+proc_DK<-list()
+for (DA in c("walktrap", "louvain", "labelProp", "infomap"))
+{
+  proc_DK[[DA]] <- robinRobust(graph=uni_graph2, graphRandom=graphRandomDK,
+                               measure="vi", method=DA, type="independent")
+}
+for (i in 1:length(proc_DK))
+{
+  comp_foo<-proc_DK[[i]]
+  print(plotRobin(uni_graph2, model1=comp_foo$Mean, model2=comp_foo$MeanRandom, legend = c(names(proc_CM)[i],"Null"), 
+                  title = "Robin plot robustness based on VI"))
+}
+```
+
+```{r}
+#
+#
+#
+for (i in 1:length(proc_DK))
+{
+  results_Robin[i,3] <- robinGPTest(model1=proc_DK[[i]]$Mean, model2=proc_DK[[i]]$MeanRandom)
+  AUC <- robinAUC(graph=uni_graph2,
+                  model1=proc_DK[[i]]$Mean,
+                  model2=proc_DK[[i]]$MeanRandom)
+  results_Robin[i,4] <- AUC$area2/AUC$area1
+  robinFDATest(graph=uni_graph2, model1=proc_DK[[i]]$Mean, model2=proc_DK[[i]]$MeanRandom)
+}
+```
+
+```{r}
+#save.image('/Users/Fernando/Desktop/01_Sanger_paper/improvement_dataset.Rdata')
+#save.image('/Users/Fernando/Desktop/01_Sanger_paper/final_dataset_v18final.Rdata')
+```
+
+```{r}
+#
+# Modules
+#
+foo_comps<-membership(components)
+names(foo_comps)<-sapply(strsplit(names(foo_comps),"_"),`[`,2)
+
+#
+#
+foo<-condensed_baps_adm[orden.foo,]
+foo<-data.frame(orden=factor(c(1:dim(foo)[1])),modules=factor(foo_comps[orden.foo],levels = order(table(foo_modules),decreasing=TRUE)))
+
+colorinos_modules<-colorRampPalette(colorinos.bipolar)(max(foo_comps))
+
+
+p<-ggplot(data.frame(foo)) +
+  geom_bar(aes(x=orden, y=1,fill=modules),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos_modules,na.value="white") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+                           axis.text.x=element_blank(),
+                           axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+                           axis.text.y=element_blank(),
+                           axis.ticks.y=element_blank()) + coord_polar() 
+print(p)
+```
+
+```{r}
+print(p + facet_wrap(vars(modules!=1)))
+```
+
+```{r, fig.width=10, fig.height=10}
+final_mods<-igraph::cluster_louvain(uni_graph2)
+foo_modules<-membership(final_mods)
+names(foo_modules)<-sapply(strsplit(names(foo_modules),"_"),`[`,2)
+
+#
+#
+foo<-condensed_baps_adm[orden.foo,]
+foo<-data.frame(orden=factor(c(1:dim(foo)[1])),modules=factor(foo_modules[orden.foo],levels = order(table(foo_modules),decreasing=TRUE)))
+
+colorinos_modules<-colorRampPalette(colorinos.bipolar)(max(foo_modules))
+
+
+p<-ggplot(data.frame(foo)) +
+  geom_bar(aes(x=orden, y=1,fill=modules),
+           stat="identity", alpha=0.5) +
+  scale_fill_discrete(colorinos_modules,na.value="white") +
+  geom_hline(yintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_hline(yintercept = 1, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 0, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 94, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 240, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 278, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 443, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 516, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 543, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 601, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 771, colour = 1, alpha=1, size=0.3) +
+  geom_vline(xintercept = 806, colour = 1, alpha=1, size=0.3) +
+  ylim(c(-0.5,1)) + 
+  theme_linedraw() + theme(panel.grid.major.x = element_blank(),panel.grid.major.y = element_blank(),axis.title.x=element_blank(),
+                           axis.text.x=element_blank(),
+                           axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+                           axis.text.y=element_blank(),
+                           axis.ticks.y=element_blank()) + coord_polar() 
+print(p + facet_wrap(vars(modules)))
+```
+
+```{r}
+#
+# Plot beyond to illustrate the networks
+#
+colorinos_neo<-hue_pal()(34)[c(1,12,20,10,9,3,7,23,11,24,4,5,14,6,2,13,21,8,18,25,26,19,15,22,16,27,28,17,29,30,31,32,33,34)]
+color_clusters<-foo_modules
+names(color_clusters)<-paste("s_",names(color_clusters),sep="")
+color_clusters<-color_clusters[names(V(uni_graph2))]
+plot(
+  uni_graph2,
+  vertex.size     = degree(uni_graph2)/10 +1,
+  vertex.label    = NA,
+  edge.arrow.size = .25,
+  vertex.color    = colorinos_neo[color_clusters]
+)
+```
+
+```{r}
+foo<-induced_subgraph(uni_graph2,which(color_clusters%in%c(1,2,4,5,6,7,9,11,12,14,15,16,18)))
+plot(
+  foo,
+  vertex.size     = degree(foo)/10 +1,
+  vertex.label    = NA,
+  edge.arrow.size = .25,
+  vertex.color    = colorinos_neo[color_clusters[which(color_clusters%in%c(1,2,4,5,6,7,9,11,12,14,15,16,18))]]
+)
+```
+
+```{r}
+for (i in 1:34)
+{
+  plot(
+    uni_graph2,
+    vertex.size     = degree(uni_graph2)/10 +1,
+    vertex.label    = NA,
+    edge.arrow.size = .25,
+    vertex.color    = color_clusters==i
+  )
+}
+```
+
+```{r}
+stats_degree<-list()
+stats_desc<-list()
+stats_networks<-list()
+for (i in 1:34)
+  {
+  foo<-induced_subgraph(uni_graph2,which(color_clusters==i))
+  # Computing centrality measures for each vertex
+  V(foo)$outdegree  <- degree(foo, mode = "out")
+  V(foo)$closeness  <- closeness(foo, mode = "total", normalized = TRUE)
+  V(foo)$betweeness <- betweenness(foo, normalized = TRUE)
+  # Extracting each vectex features as a data.frame
+  stats <- as_data_frame(foo, what = "vertices")
+  stats_networks[[i]]<-stats
+  # Computing quantiles for each variable
+  stats_degree[[i]] <- with(stats, {
+  cbind(
+    outdegree  = quantile(outdegree, c(.025, .5, .975), na.rm = TRUE),
+    closeness  = quantile(closeness, c(.025, .5, .975), na.rm = TRUE),
+    betweeness = quantile(betweeness, c(.025, .5, .975), na.rm = TRUE)
+  )
+})
+  stats_desc[[i]] <- cbind(
+    size    = vcount(foo),
+    nedges  = ecount(foo),
+    density = edge_density(foo),
+    recip   = reciprocity(foo),
+    centr   = centr_betw(foo)$centralization,
+    pathLen = mean_distance(foo)
+  )
+}
+
+foo<-induced_subgraph(uni_graph2,which(color_clusters%in%c(1,2,4,5,6,7,9,11,12,14,15,16,18)))
+V(foo)$outdegree  <- degree(foo, mode = "out")
+V(foo)$closeness  <- closeness(foo, mode = "total", normalized = TRUE)
+V(foo)$betweeness <- betweenness(foo, normalized = TRUE)
+stats <- as_data_frame(foo, what = "vertices")
+stats_networks[[35]]<-stats
+stats_degree[[35]] <- with(stats, {
+  cbind(
+    outdegree  = quantile(outdegree, c(.025, .5, .975), na.rm = TRUE),
+    closeness  = quantile(closeness, c(.025, .5, .975), na.rm = TRUE),
+    betweeness = quantile(betweeness, c(.025, .5, .975), na.rm = TRUE)
+  )
+})
+stats_desc[[35]] <- cbind(
+  size    = vcount(foo),
+  nedges  = ecount(foo),
+  density = edge_density(foo),
+  recip   = reciprocity(foo),
+  centr   = centr_betw(foo)$centralization,
+  pathLen = mean_distance(foo)
+)
+
+foo<-uni_graph2
+V(foo)$outdegree  <- degree(foo, mode = "out")
+V(foo)$closeness  <- closeness(foo, mode = "total", normalized = TRUE)
+V(foo)$betweeness <- betweenness(foo, normalized = TRUE)
+stats <- as_data_frame(foo, what = "vertices")
+stats_networks[[36]]<-stats
+stats_degree[[36]] <- with(stats, {
+  cbind(
+    outdegree  = quantile(outdegree, c(.025, .5, .975), na.rm = TRUE),
+    closeness  = quantile(closeness, c(.025, .5, .975), na.rm = TRUE),
+    betweeness = quantile(betweeness, c(.025, .5, .975), na.rm = TRUE)
+  )
+})
+stats_desc[[36]] <- cbind(
+  size    = vcount(foo),
+  nedges  = ecount(foo),
+  density = edge_density(foo),
+  recip   = reciprocity(foo),
+  centr   = centr_betw(foo)$centralization,
+  pathLen = mean_distance(foo)
+)
+stats_degree_trim<-stats_degree
+stats_desc_trim<-stats_desc
+```
+
+```{r}
+# Heatmap 3 Species vs modules
+foo_tabla<-melt(table(condensed_baps_adm[as.character(names(foo_modules)),2],foo_modules))
+foo_tabla$value[foo_tabla$value==0]<-NA
+
+
+ggplot(foo_tabla,aes(x=foo_modules,y=Var1,fill=value)) + geom_tile(color = "black") + geom_text(aes(label = value), color = "black", size = 2) +
+  scale_fill_gradient2(low = "#FFFFFF",
+                       mid = colorinos.bipolar[7],
+                       high = colorinos.bipolar[6],
+                       midpoint = 20,
+                       space = "Lab",
+                       na.value = "#FFFFFF",
+                       guide = "colourbar",
+                       aesthetics = "fill"
+  ) +
+  coord_fixed() + theme_bw()
+#
+#
+#
+```
+```{r}
+
+
+assocstats(table(condensed_baps_adm[as.character(names(foo_modules)),2],foo_modules))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(condensed_baps_adm[as.character(names(foo_modules)),2],foo_modules))
+```
+
+```{r}
+geo_distances<-mat.or.vec(length(condensed_baps_adm[as.character(names(foo_modules)),2]),length(condensed_baps_adm[as.character(names(foo_modules)),2]))
+
+for (X in 1:length(condensed_baps_adm[as.character(names(foo_modules)),2]))
+{
+  geo_distances[,X]<-geosphere::distGeo(cbind(as.numeric(condensed_baps_adm[as.character(names(foo_modules)),5]),as.numeric(condensed_baps_adm[as.character(names(foo_modules)),6]))[X,],cbind(as.numeric(condensed_baps_adm[as.character(names(foo_modules)),5]),as.numeric(condensed_baps_adm[as.character(names(foo_modules)),6])))
+}
+
+regions<-pamk(geo_distances,krange=2:10,diss=TRUE)
+
+regions$pamobject$clustering
+
+foo_tabla<-melt(table(regions$pamobject$clustering,foo_modules))
+#foo_tabla$value[foo_tabla$value==0]<-NA
+
+
+ggplot(foo_tabla,aes(x=foo_modules,y=Var1,fill=value)) + geom_tile(color = "black") + geom_text(aes(label = value), color = "black", size = 2) +
+  scale_fill_gradient2(low = "#FFFFFF",
+                       mid = colorinos.bipolar[7],
+                       high = colorinos.bipolar[6],
+                       midpoint = 20,
+                       space = "Lab",
+                       na.value = "#FFFFFF",
+                       guide = "colourbar",
+                       aesthetics = "fill"
+  ) +
+  coord_fixed() + theme_bw()
+```
+
+```{r}
+
+
+assocstats(table(regions$pamobject$clustering,foo_modules))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(regions$pamobject$clustering,foo_modules))
+```
+
+```{r, fig.width=10, fig.height=10}
+
+foo_tabla<-melt(table(paste(condensed_baps_adm[as.character(names(foo_modules)),2],regions$pamobject$clustering),foo_modules))
+
+ggplot(foo_tabla,aes(x=foo_modules,y=Var1,fill=value)) + geom_tile(color = "black") + geom_text(aes(label = value), color = "black", size = 2) +
+  scale_fill_gradient2(low = "#FFFFFF",
+                       mid = colorinos.bipolar[7],
+                       high = colorinos.bipolar[6],
+                       midpoint = 20,
+                       space = "Lab",
+                       na.value = "#FFFFFF",
+                       guide = "colourbar",
+                       aesthetics = "fill"
+  ) + coord_fixed() + theme_bw()
+
+```
+```{r}
+
+
+assocstats(table(paste(condensed_baps_adm[as.character(names(foo_modules)),2],regions$pamobject$clustering),foo_modules))
+#kable(chisq.residuals(table(condensed_baps_adm$Species,condensed_baps_adm$name)))
+
+coindep_test(table(paste(condensed_baps_adm[as.character(names(foo_modules)),2],regions$pamobject$clustering),foo_modules))
+```
+
+```{r}
+#
+# Boxplots
+#
+i="all"
+values<-cbind(i,degree(uni_graph2, mode = "out"),closeness(uni_graph2, mode = "total", normalized = TRUE),betweenness(uni_graph2, normalized = TRUE))
+i="main"
+foo<-induced_subgraph(uni_graph2,which(color_clusters%in%c(1,2,4,5,6,7,9,11,12,14,15,16,18)))
+values<-rbind(values,cbind(i,degree(foo, mode = "out"),closeness(foo, mode = "total", normalized = TRUE),betweenness(foo, normalized = TRUE)))
+for (i in c(1,2,4,5,6,7,9,11,12,14,15,16,18,3,8,10,13,17,19:34))
+{
+  foo<-induced_subgraph(uni_graph2,which(color_clusters==i))
+  # Computing centrality measures for each vertex
+values<-rbind(values,cbind(i,degree(foo, mode = "out"),closeness(foo, mode = "total", normalized = TRUE),betweenness(foo, normalized = TRUE)))
+}
+#colnames(values)<-c("group","degree","close","between")
+values<-
+  data.frame(group=factor(values[,1],
+                          levels=c("all","main",1,2,4,5,6,7,9,11,12,14,15,16,18,3,8,10,13,17,19:34)),
+             degree=as.numeric(values[,2]),close=as.numeric(values[,3]),between=as.numeric(values[,4]))
+ggplot(values[values$group%in%c("all","main"),],aes(x=group,y=degree,fill=group))+geom_violin(alpha=0.5)
+```
+```{r}
+ggplot(values,aes(x=group,y=degree,fill=group))+geom_violin(alpha=0.5,width=1.25)
+```
+```{r}
+ggplot(values[values$group%in%c("all","main",1,2,4,5,6,7,9,11,12,14,15,16,18),],
+       aes(x=group,y=degree,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+
+#
+ggplot(values[values$group%in%c("all","main"),],aes(x=group,y=close,fill=group))+geom_violin(alpha=0.5)
+```
+```{r}
+ggplot(values,aes(x=group,y=close,fill=group))+geom_violin(alpha=0.5,width=1.25)
+```
+```{r}
+ggplot(values[values$group%in%c("all","main",1,2,4,5,6,7,9,11,12,14,15,16,18),],
+       aes(x=group,y=close,fill=group))+geom_violin(alpha=0.5,width=1.5)
+values$close
+```
+```{r}
+#
+ggplot(values[values$group%in%c("all","main"),],aes(x=group,y=between,fill=group))+geom_violin(alpha=0.5)
+```
+```{r}
+ggplot(values,aes(x=group,y=between,fill=group))+geom_violin(alpha=0.5,width=1.25)
+```
+```{r}
+ggplot(values[values$group%in%c("all","main",1,2,4,5,6,7,9,11,12,14,15,16,18),],
+       aes(x=group,y=between,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+
+```{r}
+#
+#
+#
+#
+# Cuantos grupos de closeness hay usando una mezcla de normales?
+#
+library(mclust)
+V(uni_graph2)$outdegree  <- degree(uni_graph2, mode = "out")
+V(uni_graph2)$closeness  <- closeness(uni_graph2, mode = "total", normalized = TRUE)
+V(uni_graph2)$betweeness <- betweenness(uni_graph2, normalized = TRUE)
+clustering_closeness<-Mclust(V(uni_graph2)$closeness)
+plot(clustering_closeness)
+table(clustering_closeness$classification)
+```
+```{r}
+foo_tabla<-melt(table(condensed_baps_adm[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2),2],clustering_closeness$classification))
+ggplot(foo_tabla,aes(x=Var2,y=Var1,fill=value)) + geom_tile(color = "black") + geom_text(aes(label = value), color = "black", size = 2) +
+  scale_fill_gradient2(low = "#FFFFFF",
+                       mid = colorinos.bipolar[7],
+                       high = colorinos.bipolar[6],
+                       midpoint = 33,
+                       space = "Lab",
+                       na.value = "#FFFFFF",
+                       guide = "colourbar",
+                       aesthetics = "fill"
+  ) + coord_fixed() + theme_bw()
+```
+```{r}
+ggplot(data.frame(clo = V(uni_graph2)$closeness,group=factor(clustering_closeness$classification)),aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+ggplot(data.frame(clo = V(uni_graph2)$closeness,group=factor(condensed_baps_adm[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2),2])),aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+ggplot(data.frame(clo = V(uni_graph2)$closeness,group=factor(condensed_baps_adm[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2),13])),aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+ferdframe<-data.frame(clo = V(uni_graph2)$closeness,group=factor(foo_modules[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2)]))
+ggplot(ferdframe,
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+ggplot(ferdframe[ferdframe$group%in%c(1,2,4,5,6,7,9),],
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1)
+```
+```{r}
+ggplot(ferdframe[ferdframe$group%in%c(11,12,14,15,18),],
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1)
+```
+```{r}
+ggplot(ferdframe[ferdframe$group%in%c(16),],
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1)
+```
+```{r}
+#
+# Betweenness
+#
+clustering_closeness<-Mclust(V(uni_graph2)$betweeness)
+table(clustering_closeness$classification)
+foo_tabla<-melt(table(condensed_baps_adm[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2),2],clustering_closeness$classification))
+ggplot(foo_tabla,aes(x=Var2,y=Var1,fill=value)) + geom_tile(color = "black") + geom_text(aes(label = value), color = "black", size = 2) +
+  scale_fill_gradient2(low = "#FFFFFF",
+                       mid = colorinos.bipolar[7],
+                       high = colorinos.bipolar[6],
+                       midpoint = 40,
+                       space = "Lab",
+                       na.value = "#FFFFFF",
+                       guide = "colourbar",
+                       aesthetics = "fill"
+  ) + coord_fixed() + theme_bw()
+```
+```{r}
+ggplot(data.frame(clo = V(uni_graph2)$betweeness,group=factor(clustering_closeness$classification)),aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+#
+#
+ggplot(data.frame(clo = V(uni_graph2)$betweeness,group=factor(condensed_baps_adm[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2),2])),aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+ggplot(data.frame(clo = V(uni_graph2)$betweeness,group=factor(foo_modules[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2)])),
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+ferdframe<-data.frame(clo = V(uni_graph2)$betweeness,group=factor(foo_modules[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2)]))
+ggplot(ferdframe,
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+ggplot(ferdframe[ferdframe$group%in%c(1,2,4,5,6,7,9),],
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1)
+```
+```{r}
+ggplot(ferdframe[ferdframe$group%in%c(11,12,14,15,18),],
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1)
+```
+```{r}
+ggplot(ferdframe[ferdframe$group%in%c(16),],
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1)
+```
+
+```{r}
+#
+
+# Degree
+#
+clustering_closeness<-Mclust(V(uni_graph2)$outdegree)
+table(clustering_closeness$classification)
+foo_tabla<-melt(table(condensed_baps_adm[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2),2],clustering_closeness$classification))
+ggplot(foo_tabla,aes(x=Var2,y=Var1,fill=value)) + geom_tile(color = "black") + geom_text(aes(label = value), color = "black", size = 2) +
+  scale_fill_gradient2(low = "#FFFFFF",
+                       mid = colorinos.bipolar[7],
+                       high = colorinos.bipolar[6],
+                       midpoint = 40,
+                       space = "Lab",
+                       na.value = "#FFFFFF",
+                       guide = "colourbar",
+                       aesthetics = "fill"
+  ) + coord_fixed() + theme_bw()
+```
+```{r}
+ggplot(data.frame(clo = V(uni_graph2)$outdegree,group=factor(clustering_closeness$classification)),aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)+
+  facet_wrap(vars(factor(foo_modules[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2)])))
+```
+```{r}
+#
+#
+ggplot(data.frame(clo = V(uni_graph2)$outdegree,group=factor(condensed_baps_adm[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2),2])),aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+ggplot(data.frame(clo = V(uni_graph2)$outdegree,group=factor(condensed_baps_adm[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2),13])),aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+
+ferdframe<-data.frame(clo = V(uni_graph2)$outdegree,group=factor(foo_modules[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2)]))
+
+ggplot(ferdframe,
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)
+```
+```{r}
+ggplot(ferdframe[ferdframe$group%in%c(1,2,4,5,6,7,9),],
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1)
+```
+```{r}
+ggplot(ferdframe[ferdframe$group%in%c(11,12,14,15,18),],
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1)
+```
+```{r}
+ggplot(ferdframe[ferdframe$group%in%c(16),],
+       aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1)
+#
+```
+```{r}
+V(uni_graph2)$closeness[condensed_baps_adm[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2),13]==1]
+```
+```{r}
+#
+# Not recalculate vertex stuff
+#
+stats_degree<-list()
+stats_desc<-list()
+V(uni_graph2)$outdegree  <- degree(uni_graph2, mode = "out")
+V(uni_graph2)$closeness  <- closeness(uni_graph2, mode = "total", normalized = TRUE)
+V(uni_graph2)$betweeness <- betweenness(uni_graph2, normalized = TRUE)
+for (i in 1:34)
+{
+  foo<-induced_subgraph(uni_graph2,which(color_clusters==i))
+  # Extracting each vectex features as a data.frame
+  stats <- as_data_frame(foo, what = "vertices")
+  # Computing quantiles for each variable
+  stats_degree[[i]] <- with(stats, {
+    cbind(
+      outdegree  = quantile(outdegree, c(.025, .5, .975), na.rm = TRUE),
+      closeness  = quantile(closeness, c(.025, .5, .975), na.rm = TRUE),
+      betweeness = quantile(betweeness, c(.025, .5, .975), na.rm = TRUE)
+    )
+  })
+  stats_desc[[i]] <- cbind(
+    size    = vcount(foo),
+    nedges  = ecount(foo),
+    density = edge_density(foo),
+    recip   = reciprocity(foo),
+    centr   = centr_betw(foo)$centralization,
+    pathLen = mean_distance(foo)
+  )
+}
+
+foo<-induced_subgraph(uni_graph2,which(color_clusters%in%c(1,2,4,5,6,7,9,11,12,14,15,16,18)))
+stats <- as_data_frame(foo, what = "vertices")
+stats_degree[[35]] <- with(stats, {
+  cbind(
+    outdegree  = quantile(outdegree, c(.025, .5, .975), na.rm = TRUE),
+    closeness  = quantile(closeness, c(.025, .5, .975), na.rm = TRUE),
+    betweeness = quantile(betweeness, c(.025, .5, .975), na.rm = TRUE)
+  )
+})
+stats_desc[[35]] <- cbind(
+  size    = vcount(foo),
+  nedges  = ecount(foo),
+  density = edge_density(foo),
+  recip   = reciprocity(foo),
+  centr   = centr_betw(foo)$centralization,
+  pathLen = mean_distance(foo)
+)
+
+foo<-uni_graph2
+stats <- as_data_frame(foo, what = "vertices")
+stats_degree[[36]] <- with(stats, {
+  cbind(
+    outdegree  = quantile(outdegree, c(.025, .5, .975), na.rm = TRUE),
+    closeness  = quantile(closeness, c(.025, .5, .975), na.rm = TRUE),
+    betweeness = quantile(betweeness, c(.025, .5, .975), na.rm = TRUE)
+  )
+})
+stats_desc[[36]] <- cbind(
+  size    = vcount(foo),
+  nedges  = ecount(foo),
+  density = edge_density(foo),
+  recip   = reciprocity(foo),
+  centr   = centr_betw(foo)$centralization,
+  pathLen = mean_distance(foo)
+)
+```
+```{r}
+print(stats_degree)
+```
+```{r}
+print(stats_desc)
+```
+```{r}
+stats_networksmelt<-melt(stats_networks)
+library(stargazer)
+for (i in c(1,2,4,5,6,7,9,11,12,14,15,16,18))
+{
+vertices_select<-stats_networksmelt[stats_networksmelt$L1==i,1]
+foo<-stats_networksmelt[stats_networksmelt[,1]%in%vertices_select,]
+print(ggplot(foo[foo$variable=="betweeness"&foo$L1!=35,],
+              aes(x=factor(L1),y=value,z=variable,fill=factor(L1)))+geom_violin(alpha=0.5,width=1))
+stargazer(anova(lm(value~factor(L1),data=foo[foo$variable=="betweeness"&foo$L1!=35,])),type = "text")
+}
+
+```
+```{r}
+ggplot(data.frame(clo = V(uni_graph2)$outdegree,group=factor(clustering_closeness$classification)),aes(x=group,y=clo,fill=group))+geom_violin(alpha=0.5,width=1.5)+
+facet_wrap(vars(factor(foo_modules[sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2)])))
+```
+```{r}
+ggplot(data.frame(clo = V(uni_graph2)$outdegree,group=factor(clustering_closeness$classification)),aes(x=group,y=clo,fill=group))+
+  geom_violin(alpha=0.5,width=1.5)+
+  facet_wrap(vars(factor(condensed_baps_adm[as.character(sapply(strsplit(names(V(uni_graph2)),"_"),`[`,2)),2])))
+```
+
+
